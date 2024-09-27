@@ -3,6 +3,10 @@ function error=solver_1D_CD_IPDG(k)
 % uh:多项式近似解的系数向量
 % k:用来配合计算误差阶(check_error_1D.m)
 
+if nargin < 1
+    k = 1;
+end
+
 %% 参数
 % left,right:boundary
 % emg:Convection velocity, the coefficient of the convection term
@@ -12,12 +16,13 @@ function error=solver_1D_CD_IPDG(k)
 % mp:hightest order of polynomial
 % mt:Choose between RK3 and RK4 (mt = 3 for RK3, mt = 4 for RK4)
 
+format long;
 left = 0;
 right = 2*pi;
 emg = 1;
 emf = 1;
 T_end = 2*pi;
-ng = 16*2^(k-1);
+ng = 80*2^(k-1);
 mp = 1;
 mt = 3;
 
@@ -45,8 +50,8 @@ Gauss_coefficient = generate_1D_gaussian_quadrature_r(mp);
 a = generate_1D_matrix_r(Gauss_coefficient,mp,mp,trial_basis_type,0,test_basis_type,0);
 b = generate_1D_matrix_r(Gauss_coefficient,mp,mp,trial_basis_type,1,test_basis_type,1);
 c = generate_1D_matrix_r(Gauss_coefficient,mp,mp,trial_basis_type,0,test_basis_type,1);
-d = generate_1D_boundary_multiple(mp,trial_basis_type,0,test_basis_type);
-e = generate_1D_boundary_multiple(mp,trial_basis_type,1,test_basis_type);
+d = generate_1D_boundary_multiple(mp,trial_basis_type,0,test_basis_type,0);
+e = generate_1D_boundary_multiple(mp,trial_basis_type,1,test_basis_type,0);
 
 %% Segment & related coefficients
 % P_partition:剖分节点坐标,size is (1,ng+1)
@@ -94,6 +99,7 @@ A = assemble_general_1D_matrix(M,H,R,L,ng,mp);
 % right terms:involving all known value
 % evaluate b = (f,v)
 
+% 这里有问题，需要考虑质量矩阵，但是这个问题右端为0不需要改
 rs = generate_1D_vector("f_fun",Gauss_coefficient,ng,mp,P_partition,T_partition);
 
 %% boundary condition treatment
