@@ -1,4 +1,7 @@
 function result = generate_1D_matrix_r(Gauss_coefficient,mp1,mp2,trial_basis_type,trial_drivative,test_basis_type,test_derivative)
+% evaluate the integral of basis_fun*basis_fun in [-0.5,0.5]
+% trial_drivative, test_derivatuve: use to control the derivatuve of the
+% basis function
 
 result = sparse(mp2+1,mp1+1);
 GP_r = Gauss_coefficient(:,1);
