@@ -1,2 +1,8 @@
-[P_partition,T_partition] = generate_grid_1D(left,right,ng);
-% DD model has some different with other problems
+function [P,T] = generate_grid_1D(left,right,ng)
+T = zeros(2,ng);
+
+P = linspace(left,right,ng+1);
+for n = 1:ng
+    T(1,n) = n;
+    T(2,n) = n+1;
+end

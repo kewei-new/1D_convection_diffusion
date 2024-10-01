@@ -63,7 +63,7 @@ Gauss_coefficient = generate_1D_gaussian_quadrature_r(mp);
 % independent from other work,such like use Gauss quadrature formula
 a = generate_1D_matrix_r(Gauss_coefficient,mp,mp,trial_basis_type,0,test_basis_type,0);
 b = generate_1D_matrix_r(Gauss_coefficient,mp,mp,trial_basis_type,1,test_basis_type,1);
-c = generate_1D_matrix_square_r();
+c = generate_1D_matrix_with_coefficient_r('evaluate_local',phih_local,Gauss_coefficient,mp,mp,trial_basis_type,0,test_basis_type,1);
 d = generate_1D_boundary_multiple(mp,trial_basis_type,0,test_basis_type,0);
 e = generate_1D_boundary_multiple(mp,trial_basis_type,1,test_basis_type,0);
 
