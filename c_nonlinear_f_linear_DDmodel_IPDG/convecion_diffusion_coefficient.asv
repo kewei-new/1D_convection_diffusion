@@ -1,0 +1,14 @@
+function coefficient = convecion_diffusion_coefficient(model,term_type)
+
+if model == 'DD'
+
+    if term type == 11
+
+        coefficient = 
+
+    elseif term_type == 12
+
+
+elseif model == 'simple'
+
+end
