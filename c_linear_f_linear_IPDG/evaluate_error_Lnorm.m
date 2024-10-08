@@ -12,7 +12,7 @@ for n = 1:ng
     
     local_points = P(:,T(:,n));
     h_local = max(local_points) - min(local_points);
-    mid_point = sum(local_points)/length(local_points);
+    mid_point = mean(local_points);
     Gauss_points_local = GP*h_local + mid_point;
 
     uh_local = uh(:,n);
@@ -24,7 +24,7 @@ for n = 1:ng
             uh_a = uh_a + uh_local(m+1)*reference_basis(GP(k),m,101,0);
         end
         % Gauss积分求和
-         result = result + GW(k)*abs(feval(exact_fun,Gauss_points_local(k),t)-uh_a)^Lnorm;
+         result = result + GW(k)*abs(feval(exact_fun,Gauss_points_local(k),t)-uh_a)^Lnorm*h_local;
     end
 
 end
