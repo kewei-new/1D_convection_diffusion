@@ -16,14 +16,13 @@ end
 % mp:hightest order of polynomial
 % mt:Choose between RK3 and RK4 (mt = 3 for RK3, mt = 4 for RK4)
 
-format long;
 left = 0;
 right = 2*pi;
 emg = 1;
 emf = 1;
 T_end = 2*pi;
-ng = 80*2^(k-1);
-mp = 1;
+ng = 20*2^(k-1);
+mp = 2;
 mt = 3;
 
 % trial/test_basis_type: trial/test function's basis type
@@ -52,6 +51,7 @@ b = generate_1D_matrix_r(Gauss_coefficient,mp,mp,trial_basis_type,1,test_basis_t
 c = generate_1D_matrix_r(Gauss_coefficient,mp,mp,trial_basis_type,0,test_basis_type,1);
 d = generate_1D_boundary_multiple(mp,trial_basis_type,0,test_basis_type,0);
 e = generate_1D_boundary_multiple(mp,trial_basis_type,1,test_basis_type,0);
+f = generate_1D_boundary_multiple(mp,trial_basis_type,0,test_basis_type,1);
 
 %% Segment & related coefficients
 % P_partition:剖分节点坐标,size is (1,ng+1)
@@ -63,7 +63,14 @@ e = generate_1D_boundary_multiple(mp,trial_basis_type,1,test_basis_type,0);
 
 [P_partition,T_partition] = generate_grid_1D(left,right,ng);
 h = max(diff(P_partition));
-theta = 2/h;
+if mp == 1
+   C_penalty = 2;
+elseif mp == 2
+    C_penalty = 10;
+elseif mp == 3
+    C_penalty = 22;
+end
+theta =  C_penalty/h;
 
 %% initial condition with L2-projection
 % uh0：coefficient of the discrete initial value conditions
@@ -83,14 +90,17 @@ uh0 = L2_projection_1D('initial_condition',a,ng,mp,P_partition,T_partition);
 inv_a = inv(a);
 
 M1 = generate_1D_convection_diffusion_matrix_local(inv_a,b,c,ng,mp,mp,P_partition,T_partition,12);
-M2 = -generate_1D_convection_diffusion_matrix_local(inv_a,b,c,ng,mp,mp,P_partition,T_partition,11);
+M2 = generate_1D_convection_diffusion_matrix_local(inv_a,b,c,ng,mp,mp,P_partition,T_partition,11);
 [H1,R1,L1] = generate_1D_convection_diffusion_flux_local(inv_a,d,e,theta,ng,mp,P_partition,T_partition,11);
 [H2,R2,L2] = generate_1D_convection_diffusion_flux_local(inv_a,d,e,theta,ng,mp,P_partition,T_partition,12);
+[H3,R3,L3] = generate_1D_symmetrical_local(inv_a,f,ng,mp,P_partition,T_partition);
+[H4,R4,L4] = generate_1D_penalty_local(inv_a,d,theta,ng,mp,P_partition,T_partition);
 
-M = M1+M2;
-H = H1+H2;
-R = R1+R2;
-L = L1+L2;
+M = M1-M2;
+H = H1-H2-H3+H4;
+R = R1-R2-R3+R4;
+L = L1-L2-L3+L4;
+
 
 % general matrix
 % uht + A*uh = b
@@ -105,8 +115,8 @@ rs = generate_1D_vector("f_fun",Gauss_coefficient,ng,mp,P_partition,T_partition)
 %% boundary condition treatment
 % boundary_nodes: involves boundary types, nodes in boundary
 % 这里是周期边界条件，为了一般化程序所以加了这样一步，周期边界最方便是在assemble那一步直接把1，n这两个单元的左右补全
-boundary_nodes = [1;1;1];
-[A,rs] = boundary_treatment_1D(boundary_nodes,A,rs,ng,mp);
+% boundary_nodes = [1;1;1];
+% [A,rs] = boundary_treatment_1D(boundary_nodes,A,rs,ng,mp);
 
 %% time evoulation
 % choose CFL condition

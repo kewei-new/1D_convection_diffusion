@@ -1,8 +1,7 @@
-function result = assemble_general_1D_matrix(M,H,R,L,ng,mp)
-% assemble marix for the left term
-% noting: this assemble is only useful with no nonlinear term,
+function result = assemble_1D_matrix_without_variable(M,H,R,L,ng,mp)
+% assemble marix for the left term without varibale coefficient term
+% this design is to update the general matrix conveniently
 result = sparse(ng*(mp+1),ng*(mp+1));
-
 % assemble 2 to N-1 elements
 for n = 2:ng-1
     

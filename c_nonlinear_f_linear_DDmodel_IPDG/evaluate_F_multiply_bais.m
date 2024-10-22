@@ -1,4 +1,4 @@
-function right_term = evaluate_F_multiply_bais(f_fun,Gauss_coefficient,ng,mp,P,T)
+function right_term = evaluate_F_multiply_bais(f_fun,t,Gauss_coefficient,ng,mp,P,T)
 % evaluate (f,v)
 % right_term: shape is (mp+1)*ng; every row is in an element
 
@@ -22,7 +22,7 @@ for n = 1:ng
         for k = 1:Gpn
                         
             right_term(m+1,n) = right_term(m+1,n) + ...
-                GW(k)*feval(f_fun,Gauss_points_local(k),0)*reference_basis(GP(k),m,101,0);
+                GW(k)*feval(f_fun,Gauss_points_local(k),t)*reference_basis(GP(k),m,101,0);
 
         end
     end
