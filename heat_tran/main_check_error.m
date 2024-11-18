@@ -1,9 +1,10 @@
-% check_error_1D.m
-% check the order of error
+% check error
+
 clear;clc;
 k=3;
+mp=2;
 for i = 1:k
-    error = solver_1D_CD_IPDG(i);
+    error = solver_1D_CD_IPDG(i,mp);
     e(i,:) = error;
 end
 

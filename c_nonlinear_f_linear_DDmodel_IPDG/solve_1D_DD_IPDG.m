@@ -38,7 +38,7 @@ right = 0.6;
 emg = convecion_diffusion_coefficient('DD',11);
 emf = convecion_diffusion_coefficient('DD',12);
 T_end = 1;
-ng = 4*2^(k-1);
+ng = 20*2^(k-1);
 mp = mo-1;
 mt = 3;
 

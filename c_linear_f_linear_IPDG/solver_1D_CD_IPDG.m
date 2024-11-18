@@ -4,7 +4,7 @@ function error=solver_1D_CD_IPDG(k)
 % k:用来配合计算误差阶(check_error_1D.m)
 
 if nargin < 1
-    k = 1;
+    k = 2;
 end
 
 %% 参数
@@ -18,11 +18,11 @@ end
 
 left = 0;
 right = 2*pi;
-emg = 1;
+emg = 5;
 emf = 1;
 T_end = 2*pi;
 ng = 20*2^(k-1);
-mp = 2;
+mp = 3;
 mt = 3;
 
 % trial/test_basis_type: trial/test function's basis type
@@ -66,7 +66,7 @@ h = max(diff(P_partition));
 if mp == 1
    C_penalty = 2;
 elseif mp == 2
-    C_penalty = 10;
+    C_penalty = 1;
 elseif mp == 3
     C_penalty = 22;
 end
@@ -83,7 +83,7 @@ uh0 = L2_projection_1D('initial_condition',a,ng,mp,P_partition,T_partition);
 
 % left terms:generate coefficient of the unknown variables
 % not consider interior boundaries,would like to get such scheme: uht + B/A * uh - C/A * uh
-% M1=B/A; M2=-C/A;
+% M1=B/A; M2=C/A;
 % consider interior boundaries, it could influent right segment,
 % left segment and here(in) segemnt; so we use R,L,H to express these situations.
 % R1,L1,H1:generate by convection;R2,L2,H2:generate by diffusion
@@ -91,15 +91,16 @@ inv_a = inv(a);
 
 M1 = generate_1D_convection_diffusion_matrix_local(inv_a,b,c,ng,mp,mp,P_partition,T_partition,12);
 M2 = generate_1D_convection_diffusion_matrix_local(inv_a,b,c,ng,mp,mp,P_partition,T_partition,11);
-[H1,R1,L1] = generate_1D_convection_diffusion_flux_local(inv_a,d,e,theta,ng,mp,P_partition,T_partition,11);
-[H2,R2,L2] = generate_1D_convection_diffusion_flux_local(inv_a,d,e,theta,ng,mp,P_partition,T_partition,12);
+% [H1,R1,L1] = generate_1D_convection_diffusion_flux_local(inv_a,d,e,ng,mp,P_partition,T_partition,11);
+[H1,R1,L1] = generate_1D_convection_inwind_flux(inv_a,d,ng,mp,P_partition,T_partition);
+[H2,R2,L2] = generate_1D_convection_diffusion_flux_local(inv_a,d,e,ng,mp,P_partition,T_partition,12);
 [H3,R3,L3] = generate_1D_symmetrical_local(inv_a,f,ng,mp,P_partition,T_partition);
 [H4,R4,L4] = generate_1D_penalty_local(inv_a,d,theta,ng,mp,P_partition,T_partition);
 
 M = M1-M2;
-H = H1-H2-H3+H4;
-R = R1-R2-R3+R4;
-L = L1-L2-L3+L4;
+H = H1-H2+H3+H4;
+R = R1-R2+R3+R4;
+L = L1-L2+L3+L4;
 
 
 % general matrix

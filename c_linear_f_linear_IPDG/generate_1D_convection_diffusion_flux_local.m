@@ -1,4 +1,4 @@
-function [H,R,L] = generate_1D_convection_diffusion_flux_local(inv_matrix_A,matrix_D,matrix_E,theta,ng,mp,P,T,term_type)
+function [H,R,L] = generate_1D_convection_diffusion_flux_local(inv_matrix_A,matrix_D,matrix_E,ng,mp,P,T,term_type)
 % generate the flux from the convection/diffusion term (f(u)_x) / (g(u)_xx)
 % [flux(f(u))*v] /[flux(g(u_x))*v]
 % consider mass matrix in the same time

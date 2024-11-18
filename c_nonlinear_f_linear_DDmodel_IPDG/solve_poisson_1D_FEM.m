@@ -6,7 +6,7 @@ function [phi,Tb] = solve_poisson_1D_FEM(mp,P,T,Gauss_coefficient,uh)
 
 %% nargin
 if nargin < 1
-    ng = 20;
+    ng = 5;
     left = 0;
     right = 0.6;
     P = linspace(left,right,ng+1);
@@ -63,5 +63,5 @@ phi = A\b;
 % errorinf = evaluate_error_absolute_FEM('temp_exact_fun',phi,P,T,Tb,ng,mp,basis_type)
 %% plot
 % Output grid midpoints and grid points
-% plot_phi_FEM(phi,P,T,Tb,basis_type);
+plot_phi_FEM(phi,P,T,Tb,basis_type);
 % hold on
