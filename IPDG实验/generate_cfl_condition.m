@@ -33,10 +33,10 @@ elseif term_type == 12
         cfl = 0.01;
 
     elseif mp == 3
-        cfl = 0.001;
+        cfl = 0.003;
 
     else
-        cfl = 0.0015;
+        cfl = 0.0005;
     end
 
 end

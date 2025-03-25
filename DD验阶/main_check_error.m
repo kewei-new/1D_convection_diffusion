@@ -1,10 +1,11 @@
-% check error
 
 clear;
-k=3;
-mp=3;
+k=2;
+mo=4;
+
+e = zeros(k,3)
 for i = 1:k
-    error = solver_1D_CD_IPDG(i,mp);
+    error = solve_1D_DDmodel(mo,i);
     e(i,:) = error;
 end
 

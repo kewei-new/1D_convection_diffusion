@@ -11,8 +11,8 @@ function error=solver_1D_CD_IPDG(k,mp)
 % ut + ux = 0
 
 if nargin < 1
-    k = 2;
-    mp = 3;
+    k = 1;
+    mp = 2;
 end
 
 %% 参数
@@ -29,7 +29,7 @@ right = 2*pi;
 emg = 10;
 emf = 0;
 T_end = 1;
-ng = 20*2^(k-1);
+ng = 10*2^(k-1);
 mt = 3;
 
 %% Gauss-lobatto and mass-matrix(legendre & [-0.5,0.5])
