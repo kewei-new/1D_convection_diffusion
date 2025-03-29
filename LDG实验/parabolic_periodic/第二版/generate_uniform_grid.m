@@ -1,0 +1,5 @@
+function [h,mid_points]=generate_uniform_grid(left,right,ng)
+
+h = (right - left)/ng;
+mid_points = linspace(left+h/2,right-h/2,ng);
+h = ones(ng,1)*h;

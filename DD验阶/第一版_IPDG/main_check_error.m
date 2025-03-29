@@ -1,7 +1,7 @@
 
 clear;
-k=2;
-mo=4;
+k=3;
+mo=3;
 
 e = zeros(k,3)
 for i = 1:k

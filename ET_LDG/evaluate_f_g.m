@@ -104,7 +104,8 @@ for k = 2:ng+1
     end
     q1(:,k-1) = evaluate_uh_DG(Gp, qh(:,k-1,1),mp);
 end
-q1(1,ng+1) = q1(2,ng);
+% q1(1,ng+1) = q1(2,ng);
+q1(1,ng+1) = q1(1,1);
 
 for k =1:ng
     for m = 0:mp
@@ -129,7 +130,8 @@ for k = 2:ng+1
     end
     q2(:,k-1) = evaluate_uh_DG(Gp, qh(:,k-1,2),mp);
 end
-q2(1,ng+1) = q2(2,ng);
+% q2(1,ng+1) = q2(2,ng);
+q2(1,ng+1) = q2(1,1);
 
 for k =1:ng
     for m = 0:mp

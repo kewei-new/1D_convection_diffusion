@@ -21,7 +21,7 @@ xmu=1;
 
 left = 0;
 right = 2*pi;
-T_end = 1;
+T_end = 0.5;
 ng = 10*2^(k-1);
 mp = mo-1;
 mt = 3;
@@ -94,7 +94,7 @@ t_m = 0;
 result = zeros(size(n_m,1),size(n_m,2));
 result1 = zeros(size(n_m,1),size(n_m,2));
 b = generate_1D_vector(Gauss_coefficient,t_m,inv_a,ng,mp,h,mid_points);
-t1 = toc
+% t1 = toc
 while t_m < T_end
     
     if t_m + dt>=T_end
@@ -113,7 +113,7 @@ while t_m < T_end
     result(:,ng+2) = result(:,2);
     nh = result(:,2:ng+1);
     
-    t2 = toc-t1
+    % t2 = toc-t1
 
     % io = 2
     [phi,E] = solve_poisson_1D_FEM(t_m+dt/2,mp,ng,P_partition,T_partition,Pb,Tb,Gauss_coefficient,h,mid_points,nh,basis_type);
@@ -142,7 +142,7 @@ while t_m < T_end
     t_m = t_m+dt;
 
 end
-t3 = toc;
+% t3 = toc;
 
 
 % evaluate errors

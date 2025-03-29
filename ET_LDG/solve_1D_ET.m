@@ -71,7 +71,7 @@ while (t_m<T_end) && (error>1e-6)
 
     % io = 2
     [~,phix] = solve_1D_LDG(Gauss_coefficient,LDG_matrix,Q_matrix,f_values,u1,h,mid_points,mp,ng,num);
-    mid_values = plot_1D_ET(mid_points,uh1_temp(:,2:ng+1,1),uh2_temp(:,2:ng+1,1),phih,phix);
+    % mid_values = plot_1D_ET(mid_points,uh1_temp(:,2:ng+1,1),uh2_temp(:,2:ng+1,1),phih,phix);
     phixh = [phix(:,ng),phix,phix(:,1)];
     % [emf,~]=evaluate_fluid_velocity(ng,mp,mid_points_p,h,uh1_temp(:,:,1),uh2_temp(:,:,1),phixh);
 
