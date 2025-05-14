@@ -23,6 +23,6 @@ end
    
 
 
-dt1= cflc * h^2/ emf;
-dt2= cfld * h^3 / emg;
+dt1= cflc * h/ emf;
+dt2= cfld * h^2 / emg;
 dt = min(dt1,dt2);

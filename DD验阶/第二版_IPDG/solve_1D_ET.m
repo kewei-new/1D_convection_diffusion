@@ -12,7 +12,7 @@ function  [u1,phih,phix] =  solve_1D_ET(Gauss_coefficient,inv_mass,ng,mp,h,mid_p
 % + sin(x)cos(t) = 
 
 if mp==1
-    C_div_h = 1/h;
+    C_div_h = 5/h;
 elseif mp==2
     C_div_h = 10/h;
 elseif mp==3

@@ -10,7 +10,7 @@ function error = solve_1D_DDmodel(mo,k)
 %% nargin
 if nargin < 1
     k = 2;
-    mo= 3;
+    mo= 2;
 elseif nargin < 2
     k = 1;
 end
@@ -60,7 +60,7 @@ end
 if mp == 1
    C_penalty = 2;
 elseif mp == 2
-    C_penalty = 5;
+    C_penalty = 8;
 elseif mp == 3
     C_penalty = 22;
 end
@@ -107,6 +107,7 @@ while t_m < T_end
     for n = 2:ng+1
         % M2 = assemble_1D_coefficient_matrix_from_integral(Gauss_coefficient,inv_a,phi,Tb,h,mp,n-1,xmu);
         [H3,R3,L3] = generate_1D_coefficient_center_flux_local(Gauss_coefficient,inv_a,phi,E,Tb,mp,h,n,xmu,basis_type);
+        g = (L)*n_m(:,n-1)+(H)*n_m(:,n)+(R)*n_m(:,n+1);
         result(:,n) = n_m(:,n) + dt*((L+L3)*n_m(:,n-1)+(H+H3)*n_m(:,n)+(R+R3)*n_m(:,n+1)+b(:,n-1));
     end
     result(:,1) = result(:,ng+1);

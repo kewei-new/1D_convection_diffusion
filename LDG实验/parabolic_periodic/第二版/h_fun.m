@@ -1,5 +1,5 @@
 function result = h_fun(x,un,t)
 
-result = cos(t)*cos(x) - sin(t)*sin(x) + sin(t)*cos(x);
+% result = sin(x-t);
 
 result  = 0;

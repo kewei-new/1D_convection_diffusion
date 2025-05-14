@@ -5,20 +5,22 @@ clear
 
 left = 0;
 right = 2*pi;
-T_end = 0.5;
+T_end = pi/2;
 
 ng_base = 40;
 mp = 2;
 
+nt = 3;
+
 Gauss_coefficient = generate_1D_gaussian_quadrature_r(mp);
 inv_mass = generate_1D_inverse_mass_matrix(mp); 
 
-uh_error_order = zeros(2,2);
-qh_error_order = zeros(2,2);
-uh_error = zeros(3,2);
-qh_error = zeros(3,2);
+o_uh_error = zeros(nt-1,2);
+o_qh_error = zeros(nt-1,2);
+uh_error = zeros(nt,2);
+qh_error = zeros(nt,2);
 
-for k = 1:3
+for k = 1:nt
 
     ng = ng_base * 2^(k-1);
 
@@ -36,15 +38,15 @@ for k = 1:3
     qh_error(k,1) = qh_L2_error;
     qh_error(k,2) = qh_Linf_error;
 
-    % plot_DG('exact_fun_x',T_end,qh,ng,mp,mid_points)
+    % plot_DG('exact_fun',T_end,uh,ng,mp,mid_points)
 end
 
 plot_DG('exact_fun_x',T_end,qh,ng,mp,mid_points)
 
-for i = 2:3
+for i = 1:nt-1
     for j = 1:2
-        uh_error_order(i,j) = log(uh_error(i-1,j)/uh_error(i,j))/log(2);
-        qh_error_order(i,j) = log(qh_error(i-1,j)/qh_error(i,j))/log(2);
+        o_uh_error(i,j) = log(uh_error(i,j)/uh_error(i+1,j))/log(2);
+        o_qh_error(i,j) = log(qh_error(i,j)/qh_error(i+1,j))/log(2);
     end
 end
 

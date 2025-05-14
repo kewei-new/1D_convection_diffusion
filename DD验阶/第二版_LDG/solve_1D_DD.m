@@ -14,15 +14,12 @@ function  [u1,phih,phix] =  solve_1D_DD(Gauss_coefficient,inv_mass,ng,mp,h,mid_p
 %% L2_projection
 % u1 = n
 u1 = L2_projection_1D('init_fun1',inv_mass,ng,mp,h,mid_points);
-% periodically treatment
-uh1 = [u1(:,ng),u1,u1(:,1)];
-mid_points_p = [mid_points(ng),mid_points,mid_points(1)];
 
 %% LDG constant matrix
 %  use LDG mtthods to obtain electric field -/phix
 % 由于不是每个方程都是possion方程这么简单，考虑变系数，就把求系数这一块放在里面了
-[H,R,L] = generate_1D_LDG_matrix(Gauss_coefficient,mp,inv_mass,h);
-[M1,M2,Mn] = assemble_LDG_matrix(inv_mass,ng,mp,mid_points,h,H,R,L,0);
+[H,R,L] = generate_1D_LDG_matrix(Gauss_coefficient,mp,inv_mass,h(1));
+[M1,M2,Mn] = assemble_LDG_matrix(inv_mass,ng,mp,mid_points,h(1),H,R,L,0);
 
 %% evaluate dt 
 % need to evaluate emf(f(u)jacobian matrix's eigenvalue) & emg(g(u)jacobian's eigenvalue)
@@ -37,7 +34,7 @@ dt = evaluate_dt(emf,emg,h,mp);
 t_m = 0;
 while  t_m<T_end
     
-    print_progress(t_m, T_end);
+    % print_progress(t_m, T_end);
 
     if t_m + dt>=T_end
         dt = T_end - t_m;
@@ -45,37 +42,30 @@ while  t_m<T_end
     
     % 使用RK方法求解该时间步下的结果
     % io = 1
-    f_plus_g_add_h = evaluate_f_g(Gauss_coefficient,inv_mass,phixh,uh1,mp,h,mid_points_p,emf,t_m);
-    uh1_temp1 = uh1 + dt*(f_plus_g_add_h);
-    % uh1_temp1(:,1) = uh1_temp1(:,ng+1);
-    % uh1_temp1(:,ng+2) = uh1_temp1(:,2);
-    u1 = uh1_temp1(:,2:ng+1);
+    f_plus_g_add_h = evaluate_f_g(Gauss_coefficient,inv_mass,phixh,u1,mp,h,mid_points,emf,t_m);
+    uh1_temp1 = u1 + dt*f_plus_g_add_h;
 
     % io = 2
-    [~,phix] = solve_1D_LDG(Gauss_coefficient,inv_mass,M1,M2,Mn,u1,h,mid_points,mp,ng,t_m+dt/2);
+    [~,phix] = solve_1D_LDG(Gauss_coefficient,inv_mass,M1,M2,Mn,uh1_temp1,h,mid_points,mp,ng,t_m+dt/2);
     % mid_values = plot_1D_ET(mid_points,uh1_temp(:,2:ng+1,1),uh2_temp(:,2:ng+1,1),phih,phix);
     phixh = [phix(:,ng),phix,phix(:,1)];
     % [emf,~]=evaluate_fluid_velocity(ng,mp,mid_points_p,h,uh1_temp(:,:,1),uh2_temp(:,:,1),phixh);
 
-    f_plus_g_add_h = evaluate_f_g(Gauss_coefficient,inv_mass,phixh,uh1_temp1,mp,h,mid_points_p,emf,t_m+dt/2);
-    uh1_temp2 = 3/4*uh1 +1/4*uh1_temp1 + 1/4*dt*(f_plus_g_add_h);
-    % uh1_temp2(:,1) = uh1_temp2(:,ng+1);
-    % uh1_temp2(:,ng+2) = uh1_temp2(:,2);
-    u1 = uh1_temp2(:,2:ng+1);
+    f_plus_g_add_h = evaluate_f_g(Gauss_coefficient,inv_mass,phixh,uh1_temp1,mp,h,mid_points,emf,t_m+dt/2);
+    uh1_temp2 = 3/4*u1 +1/4*uh1_temp1 + 1/4*dt*(f_plus_g_add_h);
 
     % io = 3
-    [~,phix] = solve_1D_LDG(Gauss_coefficient,inv_mass,M1,M2,Mn,u1,h,mid_points,mp,ng,t_m+dt);
+    [~,phix] = solve_1D_LDG(Gauss_coefficient,inv_mass,M1,M2,Mn,uh1_temp2,h,mid_points,mp,ng,t_m+dt);
     phixh = [phix(:,ng),phix,phix(:,1)];
     % [emf,~]=evaluate_fluid_velocity(ng,mp,mid_points_p,h,uh1_temp(:,:,2),uh2_temp(:,:,2),phixh);
 
-    f_plus_g_add_h = evaluate_f_g(Gauss_coefficient,inv_mass,phixh,uh1_temp2,mp,h,mid_points_p,emf,t_m+dt);
-    uh1 = 1/3*uh1 +2/3*uh1_temp2 + 2/3*dt*(f_plus_g_add_h);
+    f_plus_g_add_h = evaluate_f_g(Gauss_coefficient,inv_mass,phixh,uh1_temp2,mp,h,mid_points,emf,t_m+dt);
+    u1 = 1/3*u1 +2/3*uh1_temp2 + 2/3*dt*(f_plus_g_add_h);
     % uh1(:,1) = uh1(:,ng+1);
     % uh1(:,ng+2) = uh1(:,2);
     
     t_m = t_m+dt;
     % 
-    u1 = uh1(:,2:ng+1);
     [phih,phix] = solve_1D_LDG(Gauss_coefficient,inv_mass,M1,M2,Mn,u1,h,mid_points,mp,ng,t_m);
     phixh = [phix(:,ng),phix,phix(:,1)];
 
@@ -87,7 +77,6 @@ while  t_m<T_end
     % mid_values = plot_1D_ET(mid_points,uh1(:,2:ng+1),phih,phix,t_m);
 end
 
-u1 = uh1(:,2:ng+1);
 
 % if t_m==T_end
 %     fprintf('没有收敛到稳态！')

@@ -2,7 +2,7 @@ function [uh,qh]=solve_1D_LDG(Gauss_coefficient,inv_mass,T,h,mid_points,mp,ng)
 % inv_mass是质量矩阵的逆
 % ut + ux = uxx + f
 
-% u = sin(t)cos(x), f = cos(t)cos(x) - sin(t)sin(x) + sin(t)cos(x)
+% u = sin(x-t), f = sin(x-t)
 % u = exp(-t)sin(x-t), f = 0
 
 % ut + q = qx + f

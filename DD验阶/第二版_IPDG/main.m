@@ -12,10 +12,10 @@ T_end = 0.5;
 %% 输入离散相关参数
 % ng:网格数
 % mo:有限元空间阶数，mp:有限元多项式次数
-ng_base = 10;
-mo =3;
+ng_base = 40;
+mo =2;
 mp = mo-1;
-nt = 4;
+nt = 2;
 %% Gauss quadrature
 % 生成数值积分相关系数，这里使用Gauss-lobatto
 % 根据有限元理论精度为mp+1阶，Gauss积分精度至少为mp+1

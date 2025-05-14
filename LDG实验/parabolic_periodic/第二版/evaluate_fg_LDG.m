@@ -20,9 +20,11 @@ for n = 2:ng+1
 end
 % dirichlet边界处理
 n = 2;
-u1(2,1) = Dir_boundary(mid_points(n-1)-h(n-1)/2,tm);
+u1(2,1) = Dir_boundary(mid_points(n-1)-h(n-1)/2,tm); %u(0)
+% u1(2,1) = u1(2,ng+1);
 n = ng+1;
-u1(1,ng+2) = Dir_boundary(mid_points(n-1)+h(n-1)/2,tm);
+u1(1,ng+2) = Dir_boundary(mid_points(n-1)+h(n-1)/2,tm); %u(2*pi)
+% u1(1,ng+2) = u1(1,2);
 
 %% fu = u
 for n = 2:ng+1 
@@ -41,7 +43,7 @@ end
 % (q,v) = (gux,v) = -(gu,vx) + (gu,v)e
 qh = zeros(mp+1,ng);
 q1 = zeros(length(Gp),ng+2);
-for n = 2:ng+1
+for n = 2:ng
     for m =  0:mp
 
         qh(m+1,n-1) = h(n-1)^(-1)*inv_mass(m+1)*(-Gw'*(g_fun(u1(:,n)).*reference_basis_x(Gp,m))...
@@ -51,9 +53,18 @@ for n = 2:ng+1
     q1(:,n) = evaluate_uh_DG(qh(:,n-1),Gp,mp);
 end
 
-q1(1,ng+2) = q1(1,2);
+n = ng+1;
+for m =  0:mp
+
+    qh(m+1,n-1) = h(n-1)^(-1)*inv_mass(m+1)*(-Gw'*(g_fun(u1(:,n)).*reference_basis_x(Gp,m))...
+                         +g_fun(u1(1,n+1))*reference_basis(0.5,m) - g_fun(u1(1,n))*reference_basis(-0.5,m));
+
+end
+q1(:,n) = evaluate_uh_DG(qh(:,n-1),Gp,mp);
+
+
 % (guxx,v) = (qx,v) = -(q,vx) + (q,v)e
-for n = 2:ng+1
+for n = 2:ng
     for m = 0:mp
     
         gu(m+1,n-1) =h(n-1)^(-1)*inv_mass(m+1)*(-Gw'*(q1(:,n).*reference_basis_x(Gp,m))...
@@ -62,7 +73,15 @@ for n = 2:ng+1
     end
 end
 
-%% hu = cos(t)cos(x) - sin(t)sin(x) + sin(t)cos(x)
+n = ng+1;
+for m = 0:mp
+    
+        gu(m+1,n-1) =h(n-1)^(-1)*inv_mass(m+1)*(-Gw'*(q1(:,n).*reference_basis_x(Gp,m))...
+                   +q1(2,n)*reference_basis(0.5,m) - q1(2,n-1)*reference_basis(-0.5,m));
+
+end
+
+%% hu = sin(x-t)
 for n = 2:ng+1
     Gp_local = Gp*h(n-1) + mid_points(n-1);
     for m = 0:mp

@@ -12,7 +12,7 @@ T_end = 1;
 %% 输入离散相关参数
 % ng:网格数
 % mo:有限元空间阶数，mp:有限元多项式次数
-ng_base = 30;
+ng_base = 20;
 mo =3;
 mp = mo-1;
 nt = 3;
@@ -39,13 +39,15 @@ for k = 1:nt
     % 求各个单元中点的值并画图
     % mid_values = plot_1D_ET(mid_points,u1,phih,phix,T_end);
     %% evvaluate error
-    error_s = evaluate_error_absolute('exact_fun_phi',T_end,phih,h,mid_points,ng,mp);
-    error_2 = evaluate_error_Lnorm('exact_fun_phi',2,T_end,phih,ng,mp,h,mid_points);
+    [error_s,error] = evaluate_error_absolute('exact_fun_n',T_end,u1,h,mid_points,ng,mp);
+    error_2 = evaluate_error_Lnorm('exact_fun_n',2,T_end,u1,ng,mp,h,mid_points);
 
     error_order(k,:) = [log(error2_Last/error_2)/log(2),log(errors_Last/error_s)/log(2)];
     error2_Last = error_2;
     errors_Last = error_s;
 end
+
+
 
 
 

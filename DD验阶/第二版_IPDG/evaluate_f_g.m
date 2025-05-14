@@ -22,9 +22,11 @@ for k = 2:ng+2
 end
 
 u1(2,1) = u1(2,ng+1);
+u1x(2,1) = u1x(2,ng+1);
 phix(2,1) = phix(2,ng+1);
 
 u1(1,ng+2) = u1(1,2);
+u1x(1,ng+2) = u1x(1,2);
 phix(1,ng+2) = phix(1,2);
 
 % 已检查

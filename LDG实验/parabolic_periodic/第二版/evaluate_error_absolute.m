@@ -11,7 +11,7 @@ for n = 1:ng
     temp = abs(feval(exact_fun,mid_points(n),t)-uh_a);
 
     result = max(result,temp);
-    % if result == temp
-    %     max_index = n;
-    % end
+    if result == temp
+        n
+    end
 end

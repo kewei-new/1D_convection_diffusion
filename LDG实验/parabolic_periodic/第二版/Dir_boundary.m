@@ -1,12 +1,14 @@
 function result = Dir_boundary(x,t)
 
-if x == 0
+if abs(x)<1e-10
 
     result = exp(-t)*sin(-t);
+    % result = sin(-t);
 
-elseif x == 2*pi
+elseif abs(x-2*pi)<1e-10
     
     result = exp(-t)*sin(-t);
+    % result = sin(-t);
 
 end
 

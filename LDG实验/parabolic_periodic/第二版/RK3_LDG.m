@@ -8,12 +8,12 @@ if io == 1
     uh(:,:,2) = uh(:,:,1) + dt*res;
 
 elseif io == 2
-    res = evaluate_fg_LDG(Gauss_coefficient,inv_mass,uh(:,:,2),h,mid_points,tm+dt/2);
+    res = evaluate_fg_LDG(Gauss_coefficient,inv_mass,uh(:,:,2),h,mid_points,tm+dt);
     uh(:,:,3) = 3/4*uh(:,:,1) + 1/4*(uh(:,:,2) + dt*res);
 
 elseif io == 3
     
-    res = evaluate_fg_LDG(Gauss_coefficient,inv_mass,uh(:,:,3),h,mid_points,tm+dt);
+    res = evaluate_fg_LDG(Gauss_coefficient,inv_mass,uh(:,:,3),h,mid_points,tm+dt/2);
     uh(:,:,1) = 1/3*uh(:,:,1) + 2/3*(uh(:,:,3) + dt*res);
 end
 
