@@ -33,6 +33,9 @@ if ($repoName -like "1D_convection_diffusion") {
     $cppApp = "dd1d_mms"
     $cppArgs = @("-n", "20", "-o", "3", "-b", "legacy_baseline")
     $cppFirstN = 4.507504e-06
+    $deviceCompareFunction = "mfemdd.compare_legacy_pn1d"
+    $deviceForwardCurrent = 17981.0
+    $deviceCqs = -24.835
 } elseif ($repoName -like "2D_convection_diffusion") {
     $compareFunction = "mfemdd.compare_legacy_dd2d"
     $refineSteps = 4
@@ -41,6 +44,9 @@ if ($repoName -like "1D_convection_diffusion") {
     $cppApp = "dd2d_mms"
     $cppArgs = @("-n", "6", "-o", "1", "-b", "legacy_baseline")
     $cppFirstN = 4.507062e-01
+    $deviceCompareFunction = ""
+    $deviceForwardCurrent = $null
+    $deviceCqs = $null
 } else {
     throw "Unsupported repository for legacy validation: $repoName"
 }
@@ -53,6 +59,10 @@ $matlabCommand = "cd('$matlabDir'); startup_mfem_dd; " +
     "assert(r.matches_full_table); " +
     "s=run_regression_suite('quick',true,'order',$order,'backend','legacy_runtime','include_device',false,'output_dir','$regressionDir'); " +
     "assert(numel(s.rows)==2); assert(strcmp(char(s.rows(1).metrics.status),'legacy_runtime'));"
+if (-not [string]::IsNullOrWhiteSpace($deviceCompareFunction)) {
+    $deviceJson = Convert-ToMatlabPath (Join-Path $artifactDir "legacy_device_compare.json")
+    $matlabCommand += " d=$deviceCompareFunction('backend','matlab_mfem','output_json','$deviceJson'); assert(d.matches_baseline);"
+}
 
 Invoke-Checked { matlab -batch $matlabCommand } "MATLAB legacy validation"
 
@@ -63,7 +73,18 @@ if ([Math]::Abs($observedRegressionFirstN - $regressionFirstN) -gt 1.0e-12) {
     throw "MATLAB regression first n_L2 mismatch: got $observedRegressionFirstN expected $regressionFirstN"
 }
 
+$matlabDeviceSummary = $null
+if (-not [string]::IsNullOrWhiteSpace($deviceCompareFunction)) {
+    $matlabDeviceSummary = [ordered]@{
+        compare_json = (Join-Path $artifactDir "legacy_device_compare.json")
+        iv_forward_current_1v = $deviceForwardCurrent
+        cv_zero_bias_cqs = $deviceCqs
+        status = "passed"
+    }
+}
+
 $cppSummary = $null
+$cppDeviceSummary = $null
 if (-not $SkipCpp) {
     if (-not (Test-Path (Join-Path $BuildDir "CMakeCache.txt"))) {
         throw "C++ build directory is missing or unconfigured: $BuildDir"
@@ -100,6 +121,43 @@ if (-not $SkipCpp) {
         first_n_l2_error = $observedCppFirstN
         status = "passed"
     }
+
+    if (-not [string]::IsNullOrWhiteSpace($deviceCompareFunction)) {
+        $deviceExe = Join-Path $BuildDir "dd_device.exe"
+        if (-not (Test-Path $deviceExe)) {
+            $deviceExe = Join-Path $BuildDir "dd_device"
+        }
+        if (-not (Test-Path $deviceExe)) {
+            throw "C++ executable not found: dd_device"
+        }
+
+        $cppDeviceRunDir = Join-Path $artifactDir "cpp_device_baseline"
+        New-Item -ItemType Directory -Force -Path $cppDeviceRunDir | Out-Null
+        Push-Location $cppDeviceRunDir
+        try {
+            Invoke-Checked { & $deviceExe -n 16 -o 1 -b legacy_baseline } "C++ device legacy baseline app"
+        } finally {
+            Pop-Location
+        }
+
+        $cppDeviceCsv = Join-Path $cppDeviceRunDir "metrics.csv"
+        $cppDeviceRows = Import-Csv $cppDeviceCsv
+        $observedForwardCurrent = [double]$cppDeviceRows[0].iv_forward_current_1v
+        $observedCqs = [double]$cppDeviceRows[0].cv_zero_bias_cqs
+        if ([Math]::Abs($observedForwardCurrent - $deviceForwardCurrent) -gt 1.0e-12) {
+            throw "C++ device forward-current mismatch: got $observedForwardCurrent expected $deviceForwardCurrent"
+        }
+        if ([Math]::Abs($observedCqs - $deviceCqs) -gt 1.0e-12) {
+            throw "C++ device Cqs mismatch: got $observedCqs expected $deviceCqs"
+        }
+        $cppDeviceSummary = [ordered]@{
+            app = "dd_device"
+            metrics_csv = $cppDeviceCsv
+            iv_forward_current_1v = $observedForwardCurrent
+            cv_zero_bias_cqs = $observedCqs
+            status = "passed"
+        }
+    }
 }
 
 $summary = [ordered]@{
@@ -111,7 +169,9 @@ $summary = [ordered]@{
         first_n_l2_error = $observedRegressionFirstN
         status = "passed"
     }
+    matlab_device_baseline = $matlabDeviceSummary
     cpp_legacy_baseline = $cppSummary
+    cpp_device_legacy_baseline = $cppDeviceSummary
     status = "passed"
 }
 

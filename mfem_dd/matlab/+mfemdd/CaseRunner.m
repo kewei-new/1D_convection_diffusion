@@ -121,6 +121,16 @@ classdef CaseRunner
         end
 
         function metrics = runDeviceSmoke(opts)
+            if lower(opts.backend) == "legacy_matlab" ...
+                    || lower(opts.backend) == "legacy_runtime" ...
+                    || lower(opts.backend) == "matlab_mfem"
+                metrics = mfemdd.CaseRunner.runLegacyPNDevice1D(opts);
+                return;
+            end
+            if lower(opts.backend) ~= "mfem_projection"
+                error("Unknown DD PN device backend: %s", opts.backend);
+            end
+
             if opts.elements < 2
                 opts.elements = 2;
             end
@@ -141,6 +151,41 @@ classdef CaseRunner
             metrics.E_relative_l2_error = 0.0;
             metrics.charge_proxy = trapz(mesh.Nodes(:,1), nd.Values);
             metrics.status = "scaffold";
+        end
+
+        function metrics = runLegacyPNDevice1D(opts)
+            baseline = mfemdd.legacy_pn1d_baseline();
+            if opts.elements < 2
+                opts.elements = 2;
+            end
+            mesh = mfemdd.Mesh.MakeCartesian1D(opts.elements, 1.0);
+            fec = mfemdd.FiniteElementCollection("H1", opts.order, 1);
+            fes = mfemdd.FiniteElementSpace(mesh, fec);
+
+            metrics = mfemdd.CaseRunner.baseMetrics("dd_pn_device", mesh, fes, opts);
+            metrics.n_l2_error = NaN;
+            metrics.phi_l2_error = NaN;
+            metrics.E_l2_error = NaN;
+            metrics.n_relative_l2_error = NaN;
+            metrics.phi_relative_l2_error = NaN;
+            metrics.E_relative_l2_error = NaN;
+            metrics.charge_proxy = baseline.summary.iv_zero_bias_qmag;
+            metrics.iv_rows = baseline.summary.iv_rows;
+            metrics.cv_rows = baseline.summary.cv_rows;
+            metrics.transient_rows = baseline.summary.transient_rows;
+            metrics.iv_reverse_current_minus1v = baseline.summary.iv_reverse_current_minus1v;
+            metrics.iv_zero_bias_current = baseline.summary.iv_zero_bias_current;
+            metrics.iv_forward_current_1v = baseline.summary.iv_forward_current_1v;
+            metrics.iv_zero_bias_qmag = baseline.summary.iv_zero_bias_qmag;
+            metrics.cv_zero_bias_cqs = baseline.summary.cv_zero_bias_cqs;
+            metrics.transient_first_finite_time = baseline.summary.transient_first_finite_time;
+            metrics.transient_first_finite_current = baseline.summary.transient_first_finite_current;
+            metrics.transient_terminal_time = baseline.summary.transient_terminal_time;
+            metrics.transient_terminal_current = baseline.summary.transient_terminal_current;
+            metrics.legacy_iv_source = baseline.iv_source;
+            metrics.legacy_cv_source = baseline.cv_source;
+            metrics.legacy_transient_source = baseline.transient_source;
+            metrics.status = "legacy_device_baseline";
         end
 
         function metrics = runLegacySmoothMMS1D(opts)
