@@ -46,6 +46,17 @@ if ($repoName -like "1D_convection_diffusion") {
     $deviceForwardCurrent = 17981.0
     $deviceCqs = -24.835
     $nativeCompareFunction = "mfemdd.compare_legacy_dd1d"
+    $cppNativeBackend = "native_mfem"
+    $cppNativeAbsTol = 2.0e-12
+    $cppNativeRelTol = 1.0e-5
+    $cppNativeFieldMap = @(
+        [ordered]@{ csv = "n_l2_error"; matlab = "n_L2" },
+        [ordered]@{ csv = "n_linf_error"; matlab = "n_Linf" },
+        [ordered]@{ csv = "phi_l2_error"; matlab = "phi_L2" },
+        [ordered]@{ csv = "phi_linf_error"; matlab = "phi_Linf" },
+        [ordered]@{ csv = "E_l2_error"; matlab = "E_L2" },
+        [ordered]@{ csv = "E_linf_error"; matlab = "E_Linf" }
+    )
 } elseif ($repoName -like "2D_convection_diffusion") {
     $compareFunction = "mfemdd.compare_legacy_dd2d"
     $refineSteps = 4
@@ -63,6 +74,10 @@ if ($repoName -like "1D_convection_diffusion") {
     $deviceForwardCurrent = $null
     $deviceCqs = $null
     $nativeCompareFunction = ""
+    $cppNativeBackend = ""
+    $cppNativeAbsTol = $null
+    $cppNativeRelTol = $null
+    $cppNativeFieldMap = @()
 } else {
     throw "Unsupported repository for legacy validation: $repoName"
 }
@@ -113,6 +128,7 @@ if (-not [string]::IsNullOrWhiteSpace($nativeCompareFunction)) {
 }
 
 $cppSummary = $null
+$cppNativeSummary = $null
 $cppDeviceSummary = $null
 if (-not $SkipCpp) {
     if (-not (Test-Path (Join-Path $BuildDir "CMakeCache.txt"))) {
@@ -174,6 +190,83 @@ if (-not $SkipCpp) {
         status = "passed"
     }
 
+    if (-not [string]::IsNullOrWhiteSpace($cppNativeBackend)) {
+        $nativeReport = Get-Content (Join-Path $artifactDir "native_matlab_compare.json") -Raw | ConvertFrom-Json
+        $columns = @($nativeReport.current_table.columns)
+        $nativeData = @($nativeReport.current_table.data)
+        if ($nativeData.Count -lt $cppExpectedRows.Count) {
+            throw "MATLAB native table has $($nativeData.Count) rows; expected at least $($cppExpectedRows.Count)"
+        }
+
+        $cppNativeRunDir = Join-Path $artifactDir "cpp_native_mfem"
+        New-Item -ItemType Directory -Force -Path $cppNativeRunDir | Out-Null
+        $cppNativeRows = @()
+        $cppNativeMaxAbs = 0.0
+        $cppNativeMaxRel = 0.0
+
+        for ($rowIndex = 0; $rowIndex -lt $cppExpectedRows.Count; $rowIndex++) {
+            $expectedRow = $cppExpectedRows[$rowIndex]
+            $matlabRow = @($nativeData[$rowIndex])
+            $rowRunDir = Join-Path $cppNativeRunDir ("n_{0}" -f $expectedRow.elements)
+            New-Item -ItemType Directory -Force -Path $rowRunDir | Out-Null
+            $rowArgs = @("-n", [string]$expectedRow.elements, "-o", [string]$expectedRow.order, "-b", $cppNativeBackend)
+            Push-Location $rowRunDir
+            try {
+                Invoke-Checked { & $exe @rowArgs } "C++ native MFEM app"
+            } finally {
+                Pop-Location
+            }
+
+            $cppNativeCsv = Join-Path $rowRunDir "metrics.csv"
+            $cppNativeCsvRows = @(Import-Csv $cppNativeCsv)
+            if ($cppNativeCsvRows.Count -ne 1) {
+                throw "C++ native backend emitted $($cppNativeCsvRows.Count) rows for elements=$($expectedRow.elements); expected 1"
+            }
+
+            $observed = $cppNativeCsvRows[0]
+            $summaryRow = [ordered]@{
+                elements = [int]$expectedRow.elements
+                order = [int]$expectedRow.order
+                metrics_csv = $cppNativeCsv
+            }
+
+            foreach ($field in $cppNativeFieldMap) {
+                $csvField = [string]$field["csv"]
+                $matlabField = [string]$field["matlab"]
+                $columnIndex = [Array]::IndexOf($columns, $matlabField)
+                if ($columnIndex -lt 0) {
+                    throw "MATLAB native table missing column $matlabField"
+                }
+                $observedValue = [double]$observed.PSObject.Properties[$csvField].Value
+                $expectedValue = [double]$matlabRow[$columnIndex]
+                $absDiff = [Math]::Abs($observedValue - $expectedValue)
+                $relDiff = $absDiff / [Math]::Max([Math]::Abs($expectedValue), [double]::Epsilon)
+                $cppNativeMaxAbs = [Math]::Max($cppNativeMaxAbs, $absDiff)
+                $cppNativeMaxRel = [Math]::Max($cppNativeMaxRel, $relDiff)
+                $allowed = [Math]::Max($cppNativeAbsTol, $cppNativeRelTol * [Math]::Abs($expectedValue))
+                if ($absDiff -gt $allowed) {
+                    throw "C++ native $csvField mismatch for elements=$($expectedRow.elements): got $observedValue expected $expectedValue abs_diff=$absDiff allowed=$allowed"
+                }
+                $summaryRow[$csvField] = $observedValue
+                $summaryRow["${csvField}_abs_diff"] = $absDiff
+            }
+            $summaryRow["status"] = "passed"
+            $cppNativeRows += $summaryRow
+        }
+
+        $cppNativeSummary = [ordered]@{
+            app = $cppApp
+            backend = $cppNativeBackend
+            row_count = $cppNativeRows.Count
+            rows = $cppNativeRows
+            max_abs_diff_vs_matlab_native = $cppNativeMaxAbs
+            max_rel_diff_vs_matlab_native = $cppNativeMaxRel
+            abs_tolerance = $cppNativeAbsTol
+            rel_tolerance = $cppNativeRelTol
+            status = "passed"
+        }
+    }
+
     if (-not [string]::IsNullOrWhiteSpace($deviceCompareFunction)) {
         $deviceExe = Join-Path $BuildDir "dd_device.exe"
         if (-not (Test-Path $deviceExe)) {
@@ -224,6 +317,7 @@ $summary = [ordered]@{
     matlab_device_baseline = $matlabDeviceSummary
     matlab_native_mfem = $matlabNativeSummary
     cpp_legacy_baseline = $cppSummary
+    cpp_native_mfem = $cppNativeSummary
     cpp_device_legacy_baseline = $cppDeviceSummary
     status = "passed"
 }

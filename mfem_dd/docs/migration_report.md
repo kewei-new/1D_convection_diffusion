@@ -58,6 +58,16 @@ This mode writes the stored legacy MATLAB DD1D metrics into the same wide
 `metrics.csv` schema. It is a C++ baseline adapter, not a C++ port of the
 IPDG/LDG/IMEX solver.
 
+The same C++ app now also has a native 1D smooth MMS backend:
+
+```bash
+dd1d_mms -n 20 -o 3 -b native_mfem
+```
+
+This path assembles and advances the 1D modal DG/IPDG diffusion, LDG Poisson,
+and four-stage IMEX update in C++ while still linking against the external MFEM
+runtime. It writes the same `metrics.csv` schema with `status=native_cpp_mfem`.
+
 The 1D PN junction physical-output baseline is now exposed through:
 
 ```matlab
@@ -93,7 +103,8 @@ powershell -ExecutionPolicy Bypass -File mfem_dd/tools/run_legacy_validation.ps1
 
 It runs the full MATLAB legacy-runtime table comparison, MATLAB PN device CSV
 comparison, quick MATLAB legacy-runtime regression, C++ build, CTest, the C++
-MMS legacy-baseline app for all 5 embedded legacy mesh rows, and the C++ PN
+MMS legacy-baseline app for all 5 embedded legacy mesh rows, the C++ native
+MFEM MMS backend against the MATLAB-native full-precision table, and the C++ PN
 device legacy-baseline app. Generated reports are written under
 `mfem_dd/artifacts/legacy_validation/`.
 
@@ -108,7 +119,7 @@ device legacy-baseline app. Generated reports are written under
 
 | Case | Legacy baseline | MATLAB status | C++ status | Delete legacy? | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `dd1d_smooth_mms` | `DD验阶/DD1D_smooth/V1/result/error_table_SIPG_p3.txt` | default `matlab_mfem` uses self-contained `mfem_dd` MATLAB-native IPDG/LDG/IMEX code and matches all 5 mesh rows within numerical tolerances; explicit `legacy_runtime` remains as old-runtime cross-check; `legacy_matlab` matches the stored table exactly; `mfem_projection` remains scaffold-only | `dd1d_mms -b legacy_baseline` writes stored legacy metrics and validation now checks all 5 embedded rows; native C++ projection still differs | No | First migration target. |
+| `dd1d_smooth_mms` | `DD验阶/DD1D_smooth/V1/result/error_table_SIPG_p3.txt` | default `matlab_mfem` uses self-contained `mfem_dd` MATLAB-native IPDG/LDG/IMEX code and matches all 5 mesh rows within numerical tolerances; explicit `legacy_runtime` remains as old-runtime cross-check; `legacy_matlab` matches the stored table exactly; `mfem_projection` remains scaffold-only | `dd1d_mms -b legacy_baseline` writes stored legacy metrics and validation checks all 5 embedded rows; `dd1d_mms -b native_mfem` runs the native C++ IPDG/LDG/IMEX backend and matches the MATLAB-native table within `2e-12` absolute tolerance | No | First migration target. |
 | `dd2d_smooth_mms` | Pending: compare in 2D repository | Scaffold implemented | Scaffold implemented | No | Included for API symmetry. |
 | `dd_pn_device` | `DD*/V3/DD1D_pn_junction/result/pn_junction/{iv_curve.csv,cv_curve.csv,transient_current.csv}` | default `matlab_mfem` reports selected legacy physical metrics exactly; `mfem_projection` remains scaffold-only | `dd_device -b legacy_baseline` writes the same selected legacy PN metrics; native C++ device solve is not ported | No | Baseline adapter only. |
 
@@ -158,6 +169,12 @@ Latest C++ baseline check:
 | --- | --- | --- | --- | --- | --- |
 | `dd1d_mms -n {20,40,80,160,320} -o 3 -b legacy_baseline` | 5 | `n_L2`, `n_Linf`, `phi_L2`, `phi_Linf`, `E_L2`, `E_Linf` | `4.507504e-06` | `6.906262e-10` | Yes, stored baseline adapter |
 
+Latest C++ native check:
+
+| Command scope | Rows | Compared against | Max abs diff | Max rel diff | Pass |
+| --- | --- | --- | --- | --- | --- |
+| `dd1d_mms -n {20,40,80,160,320} -o 3 -b native_mfem` | 5 | MATLAB-native full-precision table | `1.0264e-12` | `3.0016e-03` | Yes by `2e-12` absolute tolerance; relative difference is dominated by `1e-10`-scale finest-grid errors |
+
 Latest PN/device physical-output check:
 
 | Source | Metric | Value | Pass |
@@ -177,9 +194,9 @@ difference for these selected metrics and for the full numeric contents of
 
 Latest validation-suite check:
 
-| Command | MATLAB runtime status | MATLAB native status | MATLAB first-row `n_L2` | C++ baseline rows | C++ first-row `n_L2` |
+| Command | MATLAB runtime status | MATLAB native status | MATLAB first-row `n_L2` | C++ baseline rows | C++ native rows |
 | --- | --- | --- | --- | --- | --- |
-| `mfem_dd/tools/run_legacy_validation.ps1` | passed | passed | `4.5075040483737219e-06` | 5 passed | `4.507504e-06` |
+| `mfem_dd/tools/run_legacy_validation.ps1` | passed | passed | `4.5075040483737219e-06` | 5 passed | 5 passed |
 
 The same validation run also records PN/device baseline status:
 
@@ -193,10 +210,11 @@ test, but it is intentionally kept separate from the modal DG solver.
 
 The MATLAB-native smooth MMS gap is now closed for 1D: `matlab_mfem` runs
 self-contained `mfem_dd` code for L2 projection, modal DG/IPDG diffusion, LDG
-Poisson, and the legacy four-stage IMEX update to `T=1`. The remaining native
-gap for this case is the independent C++ solver port; C++ still exposes stored
-baseline metrics and a projection smoke path rather than the full IPDG/LDG/IMEX
-algorithm.
+Poisson, and the legacy four-stage IMEX update to `T=1`. The C++ native smooth
+MMS path is also available through `dd1d_mms -b native_mfem`; it follows the
+same modal DG/IPDG/LDG/IMEX algorithm and is validated against the MATLAB-native
+table with a small absolute tolerance. The remaining native gaps in this
+repository are device-oriented physical solves and broader C++ solver cleanup.
 
 Only the selected 1D PN junction CSV outputs have been validated so far. 2D
 device-oriented physical simulations and any independent native MATLAB/C++
