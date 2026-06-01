@@ -324,4 +324,5 @@ $summary = [ordered]@{
 
 $summaryPath = Join-Path $artifactDir "validation_summary.json"
 $summary | ConvertTo-Json -Depth 6 | Set-Content -Encoding UTF8 $summaryPath
+& (Join-Path $PSScriptRoot "write_alignment_audit.ps1") -ValidationSummary $summaryPath
 Write-Host "Legacy validation passed: $summaryPath"

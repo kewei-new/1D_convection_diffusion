@@ -108,6 +108,18 @@ MFEM MMS backend against the MATLAB-native full-precision table, and the C++ PN
 device legacy-baseline app. Generated reports are written under
 `mfem_dd/artifacts/legacy_validation/`.
 
+The validation gate also writes a machine-readable alignment audit:
+
+```powershell
+mfem_dd/tools/write_alignment_audit.ps1
+```
+
+The audit output is
+`mfem_dd/artifacts/alignment_audit/alignment_audit.json`. It classifies each
+piece of evidence as native, bridge, or baseline adapter and keeps the remaining
+native gaps explicit, so passing validation is not mistaken for permission to
+delete legacy folders.
+
 ## Tolerances
 
 - Relative L2 difference against legacy baseline: `<= 1e-6`
