@@ -26,7 +26,7 @@ classdef CaseRunner
     methods (Static, Access = private)
         function opts = parseOptions(varargin)
             opts = struct("elements", 16, "order", 2, "t_final", 1.0, "dt", 1.0e-3, ...
-                "backend", "matlab_mfem");
+                "backend", "matlab_mfem", "method", "SIPG");
             if mod(numel(varargin), 2) ~= 0
                 error("Options must be name/value pairs.");
             end
@@ -44,6 +44,8 @@ classdef CaseRunner
                         opts.dt = value;
                     case "backend"
                         opts.backend = string(value);
+                    case "method"
+                        opts.method = string(value);
                     otherwise
                         error("Unknown option: %s", name);
                 end
@@ -53,6 +55,10 @@ classdef CaseRunner
         function metrics = runSmoothMMS1D(opts)
             if lower(opts.backend) == "legacy_matlab"
                 metrics = mfemdd.CaseRunner.runLegacySmoothMMS1D(opts);
+                return;
+            end
+            if lower(opts.backend) == "legacy_runtime"
+                metrics = mfemdd.CaseRunner.runLegacyRuntimeSmoothMMS1D(opts);
                 return;
             end
 
@@ -131,7 +137,7 @@ classdef CaseRunner
         end
 
         function metrics = runLegacySmoothMMS1D(opts)
-            baseline = mfemdd.legacy_dd1d_baseline("method", "SIPG", "p_order", opts.order);
+            baseline = mfemdd.legacy_dd1d_baseline("method", opts.method, "p_order", opts.order);
             row = baseline.data(1, :);
             elements = round((2.0 * pi) / row(1));
             mesh = mfemdd.Mesh.MakeCartesian1D(elements, 2.0 * pi);
@@ -147,6 +153,33 @@ classdef CaseRunner
             metrics.charge_proxy = NaN;
             metrics.legacy_table = baseline.source;
             metrics.status = "legacy_matlab_baseline";
+        end
+
+        function metrics = runLegacyRuntimeSmoothMMS1D(opts)
+            baseline = mfemdd.legacy_dd1d_baseline("method", opts.method, ...
+                "p_order", opts.order, ...
+                "run_legacy", true, ...
+                "refine_steps", 1, ...
+                "ng_base", opts.elements, ...
+                "verbose", false);
+            row = baseline.data(1, :);
+            mesh = mfemdd.Mesh.MakeCartesian1D(opts.elements, 2.0 * pi);
+            fec = mfemdd.FiniteElementCollection("L2", opts.order, 1);
+            fes = mfemdd.FiniteElementSpace(mesh, fec);
+            metrics = mfemdd.CaseRunner.baseMetrics("dd1d_smooth_mms", mesh, fes, opts);
+            metrics.method = baseline.method;
+            metrics.n_l2_error = row(2);
+            metrics.n_linf_error = row(4);
+            metrics.phi_l2_error = row(6);
+            metrics.phi_linf_error = row(8);
+            metrics.E_l2_error = row(10);
+            metrics.E_linf_error = row(12);
+            metrics.n_relative_l2_error = NaN;
+            metrics.phi_relative_l2_error = NaN;
+            metrics.E_relative_l2_error = NaN;
+            metrics.charge_proxy = NaN;
+            metrics.legacy_table = baseline.source;
+            metrics.status = "legacy_runtime";
         end
 
         function metrics = baseMetrics(case_name, mesh, fes, opts)
