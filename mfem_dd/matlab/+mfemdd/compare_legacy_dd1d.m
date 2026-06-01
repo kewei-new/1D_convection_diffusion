@@ -2,30 +2,30 @@ function report = compare_legacy_dd1d(varargin)
 %COMPARE_LEGACY_DD1D Compare current MFEM-DD output with the legacy table.
 opts = local_parse_options(varargin{:});
 baseline = mfemdd.legacy_dd1d_baseline("method", opts.method, "p_order", opts.p_order);
-current = mfemdd.CaseRunner.run("dd1d_smooth_mms", ...
-    "elements", round(2*pi / baseline.data(1,1)), ...
-    "order", opts.p_order, ...
-    "backend", opts.backend);
+current_table = mfemdd.dd1d_convergence_table("method", opts.method, ...
+    "p_order", opts.p_order, "backend", opts.backend);
+diff_data = abs(current_table.data - baseline.data);
+diff_data(isnan(current_table.data) & isnan(baseline.data)) = 0.0;
+diff_data(xor(isnan(current_table.data), isnan(baseline.data))) = Inf;
+max_abs_diff = max(diff_data, [], 1, "omitnan");
 
-legacy_first = struct();
-legacy_first.h = baseline.data(1, 1);
-legacy_first.n_L2 = baseline.data(1, 2);
-legacy_first.phi_L2 = baseline.data(1, 6);
-legacy_first.E_L2 = baseline.data(1, 10);
+legacy_first = local_row_struct(baseline.columns, baseline.data(1,:));
+current_first = local_row_struct(current_table.columns, current_table.data(1,:));
 
 report = struct();
 report.case_name = "dd1d_smooth_mms";
 report.method = baseline.method;
 report.p_order = baseline.p_order;
 report.legacy_source = baseline.source;
+report.backend = opts.backend;
 report.legacy_first = legacy_first;
-report.current = current;
-report.n_L2_abs_diff = abs(current.n_l2_error - legacy_first.n_L2);
-report.phi_L2_abs_diff = abs(current.phi_l2_error - legacy_first.phi_L2);
-report.E_L2_abs_diff = abs(current.E_l2_error - legacy_first.E_L2);
-report.matches_first_row = report.n_L2_abs_diff <= opts.abs_tol && ...
-    report.phi_L2_abs_diff <= opts.abs_tol && ...
-    report.E_L2_abs_diff <= opts.abs_tol;
+report.current_first = current_first;
+report.columns = baseline.columns;
+report.max_abs_diff = max_abs_diff;
+report.max_abs_diff_by_column = local_diff_struct(baseline.columns, max_abs_diff);
+report.matches_full_table = all(max_abs_diff <= opts.abs_tol | isnan(max_abs_diff));
+report.legacy_table = baseline;
+report.current_table = current_table;
 
 if strlength(opts.output_json) > 0
     parent = fileparts(opts.output_json);
@@ -35,6 +35,20 @@ if strlength(opts.output_json) > 0
     fid = fopen(opts.output_json, "w");
     cleanup = onCleanup(@() fclose(fid));
     fprintf(fid, "%s", jsonencode(report, PrettyPrint=true));
+end
+end
+
+function row = local_row_struct(columns, values)
+row = struct();
+for k = 1:numel(columns)
+    row.(char(columns(k))) = values(k);
+end
+end
+
+function row = local_diff_struct(columns, values)
+row = struct();
+for k = 1:numel(columns)
+    row.(char(columns(k))) = values(k);
 end
 end
 

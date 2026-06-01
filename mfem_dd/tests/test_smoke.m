@@ -9,6 +9,9 @@ m1_legacy = run_case("dd1d_smooth_mms", "order", 3, "backend", "legacy_matlab");
 assert(m1_legacy.n_l2_error > 0.0);
 assert(m1_legacy.status == "legacy_matlab_baseline");
 
+legacy_report = mfemdd.compare_legacy_dd1d("backend", "legacy_matlab");
+assert(legacy_report.matches_full_table);
+
 m2 = run_case("dd2d_smooth_mms", "elements", 4, "order", 1);
 assert(isfinite(m2.phi_l2_error) && m2.phi_l2_error >= 0.0);
 assert(m2.dimension == 2);

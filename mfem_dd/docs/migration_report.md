@@ -25,26 +25,35 @@ This backend reads the stored legacy table
 
 | Case | Legacy baseline | MATLAB status | C++ status | Delete legacy? | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `dd1d_smooth_mms` | `DD验阶/DD1D_smooth/V1/result/error_table_SIPG_p3.txt` | `legacy_matlab` backend matches the first stored baseline row exactly; native `matlab_mfem` still differs | Scaffold implemented, not compared to legacy yet | No | First migration target. |
+| `dd1d_smooth_mms` | `DD验阶/DD1D_smooth/V1/result/error_table_SIPG_p3.txt` | `legacy_matlab` backend matches the full stored baseline table exactly; native `matlab_mfem` still differs | Scaffold implemented, not compared to legacy yet | No | First migration target. |
 | `dd2d_smooth_mms` | Pending: compare in 2D repository | Scaffold implemented | Scaffold implemented | No | Included for API symmetry. |
 | `dd_pn_device` | Pending: PN/device folders | Scaffold only | Scaffold only | No | Records doping/charge proxy only. |
 
-## Latest 1D comparison
+## Latest 1D Full-Table Comparison
 
 Command:
 
 ```matlab
 cd mfem_dd/tools
 run_legacy_dd1d_compare("backend", "legacy_matlab")
-run_legacy_dd1d_compare("backend", "matlab_mfem")
+```
+
+For a compact native-backend check:
+
+```matlab
+cd mfem_dd/matlab
+startup_mfem_dd
+r = mfemdd.compare_legacy_dd1d("backend", "matlab_mfem");
+disp(r.matches_full_table)
+disp(r.max_abs_diff_by_column)
 ```
 
 Result:
 
-| Backend | n_L2 diff | phi_L2 diff | E_L2 diff | Pass |
-| --- | ---: | ---: | ---: | --- |
-| `legacy_matlab` | `0` | `0` | `0` | Yes, as a baseline adapter |
-| `matlab_mfem` | `7.85395938243e-03` | `1.22332891129e-02` | `1.22331781859e-02` | No |
+| Backend | Table scope | Max notable differences | Pass |
+| --- | --- | --- | --- |
+| `legacy_matlab` | 5 mesh rows x 13 legacy columns | all columns `0` | Yes, as a baseline adapter |
+| `matlab_mfem` | 5 mesh rows x 13 legacy columns | `n_L2=7.8584e-03`, `phi_L2=1.2239e-02`, `E_L2=1.2239e-02`, Linf columns missing (`Inf`) | No |
 
 The native MATLAB backend now uses the same 1D domain `[0, 2*pi]` and exact
 functions as the legacy smooth test, but it is still an H1/nodal scaffold rather
