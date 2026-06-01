@@ -16,7 +16,7 @@ assert(abs(baseline.summary.cv_zero_bias_cqs + 24.835) <= 1.0e-12);
 assert(abs(baseline.summary.transient_first_finite_current + 406000.0) <= 1.0e-8);
 
 metrics = run_case("dd_pn_device", "backend", "matlab_mfem");
-assert(metrics.status == "legacy_device_baseline");
+assert(metrics.status == "native_device_mfem");
 assert(abs(metrics.iv_forward_current_1v - baseline.summary.iv_forward_current_1v) <= 1.0e-12);
 assert(height(metrics.iv_table) == height(baseline.iv));
 assert(max(abs(metrics.iv_table.right_current - baseline.iv.right_current)) == 0.0);

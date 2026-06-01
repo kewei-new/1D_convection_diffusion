@@ -110,8 +110,12 @@ if ([Math]::Abs($observedRegressionFirstN - $regressionFirstN) -gt 1.0e-12) {
 
 $matlabDeviceSummary = $null
 if (-not [string]::IsNullOrWhiteSpace($deviceCompareFunction)) {
+    $deviceReport = Get-Content (Join-Path $artifactDir "legacy_device_compare.json") -Raw | ConvertFrom-Json
     $matlabDeviceSummary = [ordered]@{
         compare_json = (Join-Path $artifactDir "legacy_device_compare.json")
+        backend = "matlab_mfem"
+        mode = "native_recompute_vs_legacy_csv"
+        current_status = $deviceReport.current_status
         iv_forward_current_1v = $deviceForwardCurrent
         cv_zero_bias_cqs = $deviceCqs
         status = "passed"

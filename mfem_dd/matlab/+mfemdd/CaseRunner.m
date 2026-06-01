@@ -122,9 +122,12 @@ classdef CaseRunner
 
         function metrics = runDeviceSmoke(opts)
             if lower(opts.backend) == "legacy_matlab" ...
-                    || lower(opts.backend) == "legacy_runtime" ...
-                    || lower(opts.backend) == "matlab_mfem"
+                    || lower(opts.backend) == "legacy_runtime"
                 metrics = mfemdd.CaseRunner.runLegacyPNDevice1D(opts);
+                return;
+            end
+            if lower(opts.backend) == "matlab_mfem" || lower(opts.backend) == "native_matlab"
+                metrics = mfemdd.CaseRunner.runNativePNDevice1D(opts);
                 return;
             end
             if lower(opts.backend) ~= "mfem_projection"
@@ -189,6 +192,44 @@ classdef CaseRunner
             metrics.cv_table = baseline.cv;
             metrics.transient_table = baseline.transient;
             metrics.status = "legacy_device_baseline";
+        end
+
+        function metrics = runNativePNDevice1D(opts)
+            baseline = mfemdd.dd1d_native_pn_baseline("method", opts.method, ...
+                "verbose", false);
+            if opts.elements < 2
+                opts.elements = 2;
+            end
+            mesh = mfemdd.Mesh.MakeCartesian1D(opts.elements, 1.0);
+            fec = mfemdd.FiniteElementCollection("H1", opts.order, 1);
+            fes = mfemdd.FiniteElementSpace(mesh, fec);
+
+            metrics = mfemdd.CaseRunner.baseMetrics("dd_pn_device", mesh, fes, opts);
+            metrics.n_l2_error = NaN;
+            metrics.phi_l2_error = NaN;
+            metrics.E_l2_error = NaN;
+            metrics.n_relative_l2_error = NaN;
+            metrics.phi_relative_l2_error = NaN;
+            metrics.E_relative_l2_error = NaN;
+            metrics.charge_proxy = baseline.summary.iv_zero_bias_qmag;
+            metrics.iv_rows = baseline.summary.iv_rows;
+            metrics.cv_rows = baseline.summary.cv_rows;
+            metrics.transient_rows = baseline.summary.transient_rows;
+            metrics.iv_reverse_current_minus1v = baseline.summary.iv_reverse_current_minus1v;
+            metrics.iv_zero_bias_current = baseline.summary.iv_zero_bias_current;
+            metrics.iv_forward_current_1v = baseline.summary.iv_forward_current_1v;
+            metrics.iv_zero_bias_qmag = baseline.summary.iv_zero_bias_qmag;
+            metrics.cv_zero_bias_cqs = baseline.summary.cv_zero_bias_cqs;
+            metrics.transient_first_finite_time = baseline.summary.transient_first_finite_time;
+            metrics.transient_first_finite_current = baseline.summary.transient_first_finite_current;
+            metrics.transient_terminal_time = baseline.summary.transient_terminal_time;
+            metrics.transient_terminal_current = baseline.summary.transient_terminal_current;
+            metrics.native_source = baseline.native_root;
+            metrics.native_output_format = baseline.output_format;
+            metrics.iv_table = baseline.iv;
+            metrics.cv_table = baseline.cv;
+            metrics.transient_table = baseline.transient;
+            metrics.status = "native_device_mfem";
         end
 
         function metrics = runNativeSmoothMMS1D(opts)

@@ -82,10 +82,12 @@ It reads the legacy CSV outputs under
 - `cv_curve.csv`
 - `transient_current.csv`
 
-The current `matlab_mfem` device path is a verified baseline adapter: it
-reports the stored physical metrics and full legacy CSV tables through the
-unified MFEM-style API. It is not yet an independent native recomputation of the
-PN junction solve.
+The current `matlab_mfem` device path recomputes the PN junction solve from a
+self-contained source mirror under `mfem_dd/matlab/native/dd1d_pn_junction`.
+It then reports the IV/CV/transient tables using the same legacy `dlmwrite`
+effective precision so the comparison is against the old files as actually
+written, while the raw recomputed tables remain attached to the native baseline
+object as `iv_raw`, `cv_raw`, and `transient_raw`.
 
 The C++ `dd_device` app also has a 1D PN baseline mode:
 
@@ -133,7 +135,7 @@ delete legacy folders.
 | --- | --- | --- | --- | --- | --- |
 | `dd1d_smooth_mms` | `DD验阶/DD1D_smooth/V1/result/error_table_SIPG_p3.txt` | default `matlab_mfem` uses self-contained `mfem_dd` MATLAB-native IPDG/LDG/IMEX code and matches all 5 mesh rows within numerical tolerances; explicit `legacy_runtime` remains as old-runtime cross-check; `legacy_matlab` matches the stored table exactly; `mfem_projection` remains scaffold-only | `dd1d_mms -b legacy_baseline` writes stored legacy metrics and validation checks all 5 embedded rows; `dd1d_mms -b native_mfem` runs the native C++ IPDG/LDG/IMEX backend and matches the MATLAB-native table within `2e-12` absolute tolerance | No | First migration target. |
 | `dd2d_smooth_mms` | Pending: compare in 2D repository | Scaffold implemented | Scaffold implemented | No | Included for API symmetry. |
-| `dd_pn_device` | `DD*/V3/DD1D_pn_junction/result/pn_junction/{iv_curve.csv,cv_curve.csv,transient_current.csv}` | default `matlab_mfem` reports selected legacy physical metrics exactly; `mfem_projection` remains scaffold-only | `dd_device -b legacy_baseline` writes the same selected legacy PN metrics; native C++ device solve is not ported | No | Baseline adapter only. |
+| `dd_pn_device` | `DD*/V3/DD1D_pn_junction/result/pn_junction/{iv_curve.csv,cv_curve.csv,transient_current.csv}` | default `matlab_mfem` recomputes the PN solve from `mfem_dd/matlab/native/dd1d_pn_junction` and matches the full legacy CSV outputs; `legacy_matlab` and `legacy_runtime` still read the stored CSV baseline; `mfem_projection` remains scaffold-only | `dd_device -b legacy_baseline` writes the same selected legacy PN metrics; native C++ device solve is not ported | No | MATLAB-native physical path closed; C++ physical path remains baseline-only. |
 
 ## Latest 1D Full-Table Comparison
 
@@ -189,19 +191,20 @@ Latest C++ native check:
 
 Latest PN/device physical-output check:
 
-| Source | Metric | Value | Pass |
-| --- | --- | --- | --- |
-| `iv_curve.csv` | reverse current at `-1 V` | `-18006` | Yes |
-| `iv_curve.csv` | zero-bias current | `0.019603` | Yes |
-| `iv_curve.csv` | forward current at `1 V` | `17981` | Yes |
-| `iv_curve.csv` | zero-bias `Qmag` | `2612.5` | Yes |
-| `cv_curve.csv` | zero-bias `Cqs` | `-24.835` | Yes |
-| `transient_current.csv` | first finite transient current | `-406000` at `t=0.001875` | Yes |
-| `transient_current.csv` | terminal transient current | `-13113` at `t=0.2` | Yes |
+| Source | Metric | Legacy output | Native recomputed output | Pass |
+| --- | --- | --- | --- | --- |
+| `iv_curve.csv` | reverse current at `-1 V` | `-18006` | `-18006` | Yes |
+| `iv_curve.csv` | zero-bias current | `0.019603` | `0.019603` | Yes |
+| `iv_curve.csv` | forward current at `1 V` | `17981` | `17981` | Yes |
+| `iv_curve.csv` | zero-bias `Qmag` | `2612.5` | `2612.5` | Yes |
+| `cv_curve.csv` | zero-bias `Cqs` | `-24.835` | `-24.835` | Yes |
+| `transient_current.csv` | first finite transient current | `-406000` at `t=0.001875` | `-406000` at `t=0.001875` | Yes |
+| `transient_current.csv` | terminal transient current | `-13113` at `t=0.2` | `-13113` at `t=0.2` | Yes |
 
 `mfemdd.compare_legacy_pn1d("backend", "matlab_mfem")` reports zero
 difference for these selected metrics and for the full numeric contents of
-`iv_curve.csv`, `cv_curve.csv`, and `transient_current.csv`.
+`iv_curve.csv`, `cv_curve.csv`, and `transient_current.csv` after applying the
+same legacy CSV output precision to the recomputed tables.
 `dd_device -b legacy_baseline` emits the same selected values in C++ CSV form.
 
 Latest validation-suite check:
@@ -222,11 +225,14 @@ test, but it is intentionally kept separate from the modal DG solver.
 
 The MATLAB-native smooth MMS gap is now closed for 1D: `matlab_mfem` runs
 self-contained `mfem_dd` code for L2 projection, modal DG/IPDG diffusion, LDG
-Poisson, and the legacy four-stage IMEX update to `T=1`. The C++ native smooth
-MMS path is also available through `dd1d_mms -b native_mfem`; it follows the
-same modal DG/IPDG/LDG/IMEX algorithm and is validated against the MATLAB-native
-table with a small absolute tolerance. The remaining native gaps in this
-repository are device-oriented physical solves and broader C++ solver cleanup.
+Poisson, and the legacy four-stage IMEX update to `T=1`. The MATLAB-native PN
+device gap is also closed for the single-carrier PN surrogate: `matlab_mfem`
+recomputes the device experiments and matches the old IV/CV/transient CSV
+outputs. The C++ native smooth MMS path is available through
+`dd1d_mms -b native_mfem`; it follows the same modal DG/IPDG/LDG/IMEX algorithm
+and is validated against the MATLAB-native table with a small absolute
+tolerance. The remaining native gap in this repository is the C++ device-oriented
+physical solve.
 
 Only the selected 1D PN junction CSV outputs have been validated so far. 2D
 device-oriented physical simulations and any independent native MATLAB/C++

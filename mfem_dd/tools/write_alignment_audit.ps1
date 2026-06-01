@@ -74,16 +74,14 @@ if ($repoName -like "1D_convection_diffusion") {
         ((Test-Passed $summary.cpp_native_mfem) -and $summary.cpp_native_mfem.row_count -eq 5) `
         "C++ modal DG/IPDG/LDG/IMEX backend is compared against the MATLAB-native table."
     $checks += New-Check "dd_pn_device" "MATLAB physical outputs" `
-        "legacy_csv_baseline_adapter" $summary.matlab_device_baseline.compare_json `
+        "native_matlab_mfem" $summary.matlab_device_baseline.compare_json `
         ((Test-Passed $summary.matlab_device_baseline) -and $deviceCompare.matches_baseline -and $deviceCompare.matches_full_outputs) `
-        "Full legacy IV/CV/transient CSV contents are replayed and compared through the unified API."
+        "The PN device solve is recomputed from the native MATLAB source mirror and compared to the legacy IV/CV/transient CSV outputs."
     $checks += New-Check "dd_pn_device" "C++ physical outputs" `
         "legacy_baseline_adapter" "" `
         (Test-Passed $summary.cpp_device_legacy_baseline) `
         "C++ device app emits selected PN legacy metrics only."
 
-    $gaps += New-Gap "dd_pn_device" "MATLAB native physical solve" `
-        "The PN device path still replays legacy CSV outputs; it does not recompute the device solve."
     $gaps += New-Gap "dd_pn_device" "C++ native physical solve" `
         "The C++ device path still emits selected baseline metrics; no native PN device solver is implemented."
     $gaps += New-Gap "legacy cleanup" "old directory deletion" `

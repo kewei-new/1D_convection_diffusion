@@ -61,6 +61,12 @@ report.device = "pn_junction";
 report.backend = opts.backend;
 report.legacy_source_root = baseline.source_root;
 report.current_status = current.status;
+if isfield(current, "native_source")
+    report.current_source = current.native_source;
+end
+if isfield(current, "native_output_format")
+    report.current_output_format = current.native_output_format;
+end
 report.fields = fields;
 report.field_report = field_report;
 report.table_report = table_report;
