@@ -36,6 +36,7 @@ if ($repoName -like "1D_convection_diffusion") {
     $deviceCompareFunction = "mfemdd.compare_legacy_pn1d"
     $deviceForwardCurrent = 17981.0
     $deviceCqs = -24.835
+    $nativeCompareFunction = "mfemdd.compare_legacy_dd1d"
 } elseif ($repoName -like "2D_convection_diffusion") {
     $compareFunction = "mfemdd.compare_legacy_dd2d"
     $refineSteps = 4
@@ -47,6 +48,7 @@ if ($repoName -like "1D_convection_diffusion") {
     $deviceCompareFunction = ""
     $deviceForwardCurrent = $null
     $deviceCqs = $null
+    $nativeCompareFunction = ""
 } else {
     throw "Unsupported repository for legacy validation: $repoName"
 }
@@ -62,6 +64,10 @@ $matlabCommand = "cd('$matlabDir'); startup_mfem_dd; " +
 if (-not [string]::IsNullOrWhiteSpace($deviceCompareFunction)) {
     $deviceJson = Convert-ToMatlabPath (Join-Path $artifactDir "legacy_device_compare.json")
     $matlabCommand += " d=$deviceCompareFunction('backend','matlab_mfem','output_json','$deviceJson'); assert(d.matches_baseline);"
+}
+if (-not [string]::IsNullOrWhiteSpace($nativeCompareFunction)) {
+    $nativeJson = Convert-ToMatlabPath (Join-Path $artifactDir "native_matlab_compare.json")
+    $matlabCommand += " n=$nativeCompareFunction('backend','matlab_mfem','refine_steps',$refineSteps,'output_json','$nativeJson'); assert(n.matches_full_table);"
 }
 
 Invoke-Checked { matlab -batch $matlabCommand } "MATLAB legacy validation"
@@ -79,6 +85,15 @@ if (-not [string]::IsNullOrWhiteSpace($deviceCompareFunction)) {
         compare_json = (Join-Path $artifactDir "legacy_device_compare.json")
         iv_forward_current_1v = $deviceForwardCurrent
         cv_zero_bias_cqs = $deviceCqs
+        status = "passed"
+    }
+}
+
+$matlabNativeSummary = $null
+if (-not [string]::IsNullOrWhiteSpace($nativeCompareFunction)) {
+    $matlabNativeSummary = [ordered]@{
+        compare_json = (Join-Path $artifactDir "native_matlab_compare.json")
+        backend = "matlab_mfem"
         status = "passed"
     }
 }
@@ -170,6 +185,7 @@ $summary = [ordered]@{
         status = "passed"
     }
     matlab_device_baseline = $matlabDeviceSummary
+    matlab_native_mfem = $matlabNativeSummary
     cpp_legacy_baseline = $cppSummary
     cpp_device_legacy_baseline = $cppDeviceSummary
     status = "passed"

@@ -61,8 +61,8 @@ classdef CaseRunner
                 metrics = mfemdd.CaseRunner.runLegacyRuntimeSmoothMMS1D(opts);
                 return;
             end
-            if lower(opts.backend) == "matlab_mfem"
-                metrics = mfemdd.CaseRunner.runLegacyRuntimeSmoothMMS1D(opts);
+            if lower(opts.backend) == "matlab_mfem" || lower(opts.backend) == "native_matlab"
+                metrics = mfemdd.CaseRunner.runNativeSmoothMMS1D(opts);
                 return;
             end
             if lower(opts.backend) ~= "mfem_projection"
@@ -189,6 +189,32 @@ classdef CaseRunner
             metrics.cv_table = baseline.cv;
             metrics.transient_table = baseline.transient;
             metrics.status = "legacy_device_baseline";
+        end
+
+        function metrics = runNativeSmoothMMS1D(opts)
+            baseline = mfemdd.dd1d_native_baseline("method", opts.method, ...
+                "p_order", opts.order, ...
+                "refine_steps", 1, ...
+                "ng_base", opts.elements, ...
+                "verbose", false);
+            row = baseline.data(1, :);
+            mesh = mfemdd.Mesh.MakeCartesian1D(opts.elements, 2.0 * pi);
+            fec = mfemdd.FiniteElementCollection("L2", opts.order, 1);
+            fes = mfemdd.FiniteElementSpace(mesh, fec);
+            metrics = mfemdd.CaseRunner.baseMetrics("dd1d_smooth_mms", mesh, fes, opts);
+            metrics.method = baseline.method;
+            metrics.n_l2_error = row(2);
+            metrics.n_linf_error = row(4);
+            metrics.phi_l2_error = row(6);
+            metrics.phi_linf_error = row(8);
+            metrics.E_l2_error = row(10);
+            metrics.E_linf_error = row(12);
+            metrics.n_relative_l2_error = NaN;
+            metrics.phi_relative_l2_error = NaN;
+            metrics.E_relative_l2_error = NaN;
+            metrics.charge_proxy = NaN;
+            metrics.native_source = baseline.source;
+            metrics.status = "native_matlab_mfem";
         end
 
         function metrics = runLegacySmoothMMS1D(opts)
