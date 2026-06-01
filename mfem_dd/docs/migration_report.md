@@ -53,6 +53,16 @@ This mode writes the stored legacy MATLAB DD1D metrics into the same wide
 `metrics.csv` schema. It is a C++ baseline adapter, not a C++ port of the
 IPDG/LDG/IMEX solver.
 
+A full local validation gate is available:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File mfem_dd/tools/run_legacy_validation.ps1
+```
+
+It runs the full MATLAB legacy-runtime table comparison, quick MATLAB
+legacy-runtime regression, C++ build, CTest, and the C++ legacy-baseline app.
+Generated reports are written under `mfem_dd/artifacts/legacy_validation/`.
+
 ## Tolerances
 
 - Relative L2 difference against legacy baseline: `<= 1e-6`
@@ -109,6 +119,12 @@ Latest C++ baseline check:
 | Command | First-row `n_L2` | First-row `phi_L2` | First-row `E_L2` | Pass |
 | --- | --- | --- | --- | --- |
 | `dd1d_mms -n 20 -o 3 -b legacy_baseline` | `4.507504e-06` | `5.547920e-06` | `5.658847e-06` | Yes, stored baseline adapter |
+
+Latest validation-suite check:
+
+| Command | MATLAB runtime status | MATLAB first-row `n_L2` | C++ baseline status | C++ first-row `n_L2` |
+| --- | --- | --- | --- | --- |
+| `mfem_dd/tools/run_legacy_validation.ps1` | passed | `4.5075040483737219e-06` | passed | `4.507504e-06` |
 
 The native MATLAB backend now uses the same 1D domain `[0, 2*pi]` and exact
 functions as the legacy smooth test, but it is still an H1/nodal scaffold rather
