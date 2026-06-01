@@ -2,16 +2,29 @@ function table_data = dd1d_convergence_table(varargin)
 %DD1D_CONVERGENCE_TABLE Produce the DD1D smooth MMS table in the legacy schema.
 opts = local_parse_options(varargin{:});
 baseline = mfemdd.legacy_dd1d_baseline("method", opts.method, "p_order", opts.p_order);
+backend = lower(opts.backend);
 
-if lower(opts.backend) == "legacy_matlab"
+if backend == "legacy_matlab"
     table_data = baseline;
     table_data.backend = "legacy_matlab";
     return;
 end
 
-data = nan(size(baseline.data));
-data(:, 1) = baseline.data(:, 1);
-for row_id = 1:size(baseline.data, 1)
+if backend == "legacy_runtime"
+    table_data = mfemdd.legacy_dd1d_baseline("method", opts.method, ...
+        "p_order", opts.p_order, ...
+        "run_legacy", true, ...
+        "refine_steps", opts.refine_steps, ...
+        "ng_base", opts.ng_base, ...
+        "verbose", opts.verbose);
+    table_data.backend = "legacy_runtime";
+    return;
+end
+
+row_count = min(opts.refine_steps, size(baseline.data, 1));
+data = nan(row_count, size(baseline.data, 2));
+data(:, 1) = baseline.data(1:row_count, 1);
+for row_id = 1:row_count
     h = baseline.data(row_id, 1);
     elements = round((2.0 * pi) / h);
     metrics = mfemdd.CaseRunner.run("dd1d_smooth_mms", ...
@@ -55,7 +68,8 @@ end
 end
 
 function opts = local_parse_options(varargin)
-opts = struct("method", "SIPG", "p_order", 3, "backend", "matlab_mfem");
+opts = struct("method", "SIPG", "p_order", 3, "backend", "matlab_mfem", ...
+    "refine_steps", 5, "ng_base", 20, "verbose", false);
 if mod(numel(varargin), 2) ~= 0
     error("Options must be name/value pairs.");
 end
@@ -69,6 +83,12 @@ for k = 1:2:numel(varargin)
             opts.p_order = value;
         case "backend"
             opts.backend = string(value);
+        case "refine_steps"
+            opts.refine_steps = value;
+        case "ng_base"
+            opts.ng_base = value;
+        case "verbose"
+            opts.verbose = logical(value);
         otherwise
             error("Unknown option: %s", name);
     end

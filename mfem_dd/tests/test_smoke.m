@@ -1,5 +1,7 @@
 function test_smoke()
 %TEST_SMOKE Fast MATLAB smoke checks for the MFEM-style implementation.
+test_root = fileparts(mfilename("fullpath"));
+addpath(fullfile(fileparts(test_root), "matlab"));
 startup_mfem_dd();
 m1 = run_case("dd1d_smooth_mms", "elements", 8, "order", 2);
 assert(isfinite(m1.n_l2_error) && m1.n_l2_error >= 0.0);
