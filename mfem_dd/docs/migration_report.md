@@ -43,6 +43,16 @@ run_regression_suite("quick", true, ...
 The generated `metrics.csv` includes optional legacy columns such as `n_Linf`,
 `phi_Linf`, and `E_Linf`; missing non-applicable fields are written as `NaN`.
 
+The C++ `dd1d_mms` app now has an explicit baseline mode:
+
+```bash
+dd1d_mms -n 20 -o 3 -b legacy_baseline
+```
+
+This mode writes the stored legacy MATLAB DD1D metrics into the same wide
+`metrics.csv` schema. It is a C++ baseline adapter, not a C++ port of the
+IPDG/LDG/IMEX solver.
+
 ## Tolerances
 
 - Relative L2 difference against legacy baseline: `<= 1e-6`
@@ -54,7 +64,7 @@ The generated `metrics.csv` includes optional legacy columns such as `n_Linf`,
 
 | Case | Legacy baseline | MATLAB status | C++ status | Delete legacy? | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `dd1d_smooth_mms` | `DD验阶/DD1D_smooth/V1/result/error_table_SIPG_p3.txt` | `legacy_matlab` backend matches the full stored baseline table exactly; `legacy_runtime` recomputes all 5 mesh rows within numerical tolerances and is exposed through `run_case`; native `matlab_mfem` still differs | Scaffold implemented, not compared to legacy yet | No | First migration target. |
+| `dd1d_smooth_mms` | `DD验阶/DD1D_smooth/V1/result/error_table_SIPG_p3.txt` | `legacy_matlab` backend matches the full stored baseline table exactly; `legacy_runtime` recomputes all 5 mesh rows within numerical tolerances and is exposed through `run_case`; native `matlab_mfem` still differs | `dd1d_mms -b legacy_baseline` writes stored legacy metrics; native C++ projection still differs | No | First migration target. |
 | `dd2d_smooth_mms` | Pending: compare in 2D repository | Scaffold implemented | Scaffold implemented | No | Included for API symmetry. |
 | `dd_pn_device` | Pending: PN/device folders | Scaffold only | Scaffold only | No | Records doping/charge proxy only. |
 
@@ -93,6 +103,12 @@ Latest quick legacy-runtime regression CSV check:
 | Command | Rows | First-row status | First-row `n_L2` |
 | --- | --- | --- | --- |
 | `run_regression_suite("quick", true, "order", 3, "backend", "legacy_runtime", "include_device", false)` | 2 | `legacy_runtime` | `4.507504048373722e-06` |
+
+Latest C++ baseline check:
+
+| Command | First-row `n_L2` | First-row `phi_L2` | First-row `E_L2` | Pass |
+| --- | --- | --- | --- | --- |
+| `dd1d_mms -n 20 -o 3 -b legacy_baseline` | `4.507504e-06` | `5.547920e-06` | `5.658847e-06` | Yes, stored baseline adapter |
 
 The native MATLAB backend now uses the same 1D domain `[0, 2*pi]` and exact
 functions as the legacy smooth test, but it is still an H1/nodal scaffold rather
