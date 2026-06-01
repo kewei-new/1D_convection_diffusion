@@ -28,6 +28,21 @@ This route runs the original MATLAB solver from the unified `mfem_dd` API and
 compares the recomputed table against the stored legacy table. It is used as a
 runtime adapter while the native MFEM-style solver is still being aligned.
 
+The regression suite can now emit legacy-runtime metrics through the same CSV
+schema:
+
+```matlab
+cd mfem_dd/matlab
+startup_mfem_dd
+run_regression_suite("quick", true, ...
+    "order", 3, ...
+    "backend", "legacy_runtime", ...
+    "include_device", false)
+```
+
+The generated `metrics.csv` includes optional legacy columns such as `n_Linf`,
+`phi_Linf`, and `E_Linf`; missing non-applicable fields are written as `NaN`.
+
 ## Tolerances
 
 - Relative L2 difference against legacy baseline: `<= 1e-6`
@@ -72,6 +87,12 @@ Result:
 | `legacy_matlab` | 5 mesh rows x 13 legacy columns | all columns `0` | Yes, exact stored-table match |
 | `legacy_runtime` | 5 mesh rows x 13 legacy columns | `h=7.3464e-07`, error columns `<=4.1583e-13`, order columns `<=4.5600e-05` | Yes, within numerical tolerances |
 | `matlab_mfem` | 5 mesh rows x 13 legacy columns | `n_L2=7.8584e-03`, `phi_L2=1.2239e-02`, `E_L2=1.2239e-02`, Linf columns missing (`Inf`) | No |
+
+Latest quick legacy-runtime regression CSV check:
+
+| Command | Rows | First-row status | First-row `n_L2` |
+| --- | --- | --- | --- |
+| `run_regression_suite("quick", true, "order", 3, "backend", "legacy_runtime", "include_device", false)` | 2 | `legacy_runtime` | `4.507504048373722e-06` |
 
 The native MATLAB backend now uses the same 1D domain `[0, 2*pi]` and exact
 functions as the legacy smooth test, but it is still an H1/nodal scaffold rather
