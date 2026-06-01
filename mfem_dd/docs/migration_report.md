@@ -93,8 +93,9 @@ powershell -ExecutionPolicy Bypass -File mfem_dd/tools/run_legacy_validation.ps1
 
 It runs the full MATLAB legacy-runtime table comparison, MATLAB PN device CSV
 comparison, quick MATLAB legacy-runtime regression, C++ build, CTest, the C++
-MMS legacy-baseline app, and the C++ PN device legacy-baseline app. Generated
-reports are written under `mfem_dd/artifacts/legacy_validation/`.
+MMS legacy-baseline app for all 5 embedded legacy mesh rows, and the C++ PN
+device legacy-baseline app. Generated reports are written under
+`mfem_dd/artifacts/legacy_validation/`.
 
 ## Tolerances
 
@@ -107,7 +108,7 @@ reports are written under `mfem_dd/artifacts/legacy_validation/`.
 
 | Case | Legacy baseline | MATLAB status | C++ status | Delete legacy? | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `dd1d_smooth_mms` | `DD验阶/DD1D_smooth/V1/result/error_table_SIPG_p3.txt` | default `matlab_mfem` uses self-contained `mfem_dd` MATLAB-native IPDG/LDG/IMEX code and matches all 5 mesh rows within numerical tolerances; explicit `legacy_runtime` remains as old-runtime cross-check; `legacy_matlab` matches the stored table exactly; `mfem_projection` remains scaffold-only | `dd1d_mms -b legacy_baseline` writes stored legacy metrics; native C++ projection still differs | No | First migration target. |
+| `dd1d_smooth_mms` | `DD验阶/DD1D_smooth/V1/result/error_table_SIPG_p3.txt` | default `matlab_mfem` uses self-contained `mfem_dd` MATLAB-native IPDG/LDG/IMEX code and matches all 5 mesh rows within numerical tolerances; explicit `legacy_runtime` remains as old-runtime cross-check; `legacy_matlab` matches the stored table exactly; `mfem_projection` remains scaffold-only | `dd1d_mms -b legacy_baseline` writes stored legacy metrics and validation now checks all 5 embedded rows; native C++ projection still differs | No | First migration target. |
 | `dd2d_smooth_mms` | Pending: compare in 2D repository | Scaffold implemented | Scaffold implemented | No | Included for API symmetry. |
 | `dd_pn_device` | `DD*/V3/DD1D_pn_junction/result/pn_junction/{iv_curve.csv,cv_curve.csv,transient_current.csv}` | default `matlab_mfem` reports selected legacy physical metrics exactly; `mfem_projection` remains scaffold-only | `dd_device -b legacy_baseline` writes the same selected legacy PN metrics; native C++ device solve is not ported | No | Baseline adapter only. |
 
@@ -153,9 +154,9 @@ Latest quick regression CSV checks:
 
 Latest C++ baseline check:
 
-| Command | First-row `n_L2` | First-row `phi_L2` | First-row `E_L2` | Pass |
-| --- | --- | --- | --- | --- |
-| `dd1d_mms -n 20 -o 3 -b legacy_baseline` | `4.507504e-06` | `5.547920e-06` | `5.658847e-06` | Yes, stored baseline adapter |
+| Command scope | Rows | Checked fields | First-row `n_L2` | Last-row `n_L2` | Pass |
+| --- | --- | --- | --- | --- | --- |
+| `dd1d_mms -n {20,40,80,160,320} -o 3 -b legacy_baseline` | 5 | `n_L2`, `n_Linf`, `phi_L2`, `phi_Linf`, `E_L2`, `E_Linf` | `4.507504e-06` | `6.906262e-10` | Yes, stored baseline adapter |
 
 Latest PN/device physical-output check:
 
@@ -176,9 +177,9 @@ difference for these selected metrics and for the full numeric contents of
 
 Latest validation-suite check:
 
-| Command | MATLAB runtime status | MATLAB native status | MATLAB first-row `n_L2` | C++ baseline status | C++ first-row `n_L2` |
+| Command | MATLAB runtime status | MATLAB native status | MATLAB first-row `n_L2` | C++ baseline rows | C++ first-row `n_L2` |
 | --- | --- | --- | --- | --- | --- |
-| `mfem_dd/tools/run_legacy_validation.ps1` | passed | passed | `4.5075040483737219e-06` | passed | `4.507504e-06` |
+| `mfem_dd/tools/run_legacy_validation.ps1` | passed | passed | `4.5075040483737219e-06` | 5 passed | `4.507504e-06` |
 
 The same validation run also records PN/device baseline status:
 

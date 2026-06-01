@@ -31,8 +31,17 @@ if ($repoName -like "1D_convection_diffusion") {
     $order = 3
     $regressionFirstN = 4.507504048373722e-06
     $cppApp = "dd1d_mms"
-    $cppArgs = @("-n", "20", "-o", "3", "-b", "legacy_baseline")
-    $cppFirstN = 4.507504e-06
+    $cppCompareFields = @(
+        "n_l2_error", "n_linf_error",
+        "phi_l2_error", "phi_linf_error",
+        "E_l2_error", "E_linf_error")
+    $cppExpectedRows = @(
+        [ordered]@{ elements = 20; order = 3; n_l2_error = 4.507504e-06; n_linf_error = 3.897874e-06; phi_l2_error = 5.547920e-06; phi_linf_error = 9.655373e-06; E_l2_error = 5.658847e-06; E_linf_error = 9.737335e-06 },
+        [ordered]@{ elements = 40; order = 3; n_l2_error = 4.071754e-07; n_linf_error = 3.531198e-07; phi_l2_error = 3.751691e-07; phi_linf_error = 6.082643e-07; E_l2_error = 3.928129e-07; E_linf_error = 6.268181e-07 },
+        [ordered]@{ elements = 80; order = 3; n_l2_error = 4.561335e-08; n_linf_error = 3.706344e-08; phi_l2_error = 2.966955e-08; phi_linf_error = 3.820909e-08; E_l2_error = 3.311548e-08; E_linf_error = 4.220075e-08 },
+        [ordered]@{ elements = 160; order = 3; n_l2_error = 5.531522e-09; n_linf_error = 4.186841e-09; phi_l2_error = 2.940053e-09; phi_linf_error = 2.935649e-09; E_l2_error = 3.472993e-09; E_linf_error = 3.100092e-09 },
+        [ordered]@{ elements = 320; order = 3; n_l2_error = 6.906262e-10; n_linf_error = 4.991136e-10; phi_l2_error = 3.419493e-10; phi_linf_error = 3.259086e-10; E_l2_error = 4.140009e-10; E_linf_error = 3.365440e-10 }
+    )
     $deviceCompareFunction = "mfemdd.compare_legacy_pn1d"
     $deviceForwardCurrent = 17981.0
     $deviceCqs = -24.835
@@ -43,8 +52,13 @@ if ($repoName -like "1D_convection_diffusion") {
     $order = 1
     $regressionFirstN = 4.507062201109525e-01
     $cppApp = "dd2d_mms"
-    $cppArgs = @("-n", "6", "-o", "1", "-b", "legacy_baseline")
-    $cppFirstN = 4.507062e-01
+    $cppCompareFields = @("n_l2_error", "p_l2_error", "phi_l2_error", "Ex_l2_error", "Ey_l2_error")
+    $cppExpectedRows = @(
+        [ordered]@{ elements = 6; order = 1; n_l2_error = 4.507062e-01; p_l2_error = 3.550932e-01; phi_l2_error = 9.804350e-02; Ex_l2_error = 6.716957e-02; Ey_l2_error = 6.716957e-02 },
+        [ordered]@{ elements = 12; order = 1; n_l2_error = 2.629943e-02; p_l2_error = 2.298078e-02; phi_l2_error = 3.181550e-02; Ex_l2_error = 2.051898e-02; Ey_l2_error = 2.051898e-02 },
+        [ordered]@{ elements = 24; order = 1; n_l2_error = 1.211073e-02; p_l2_error = 9.843311e-03; phi_l2_error = 8.128524e-03; Ex_l2_error = 5.428426e-03; Ey_l2_error = 5.428426e-03 },
+        [ordered]@{ elements = 48; order = 1; n_l2_error = 1.313986e-03; p_l2_error = 1.243116e-03; phi_l2_error = 2.030280e-03; Ex_l2_error = 1.379696e-03; Ey_l2_error = 1.379696e-03 }
+    )
     $deviceCompareFunction = ""
     $deviceForwardCurrent = $null
     $deviceCqs = $null
@@ -117,23 +131,46 @@ if (-not $SkipCpp) {
 
     $cppRunDir = Join-Path $artifactDir "cpp_baseline"
     New-Item -ItemType Directory -Force -Path $cppRunDir | Out-Null
-    Push-Location $cppRunDir
-    try {
-        Invoke-Checked { & $exe @cppArgs } "C++ legacy baseline app"
-    } finally {
-        Pop-Location
-    }
+    $cppValidatedRows = @()
+    foreach ($expected in $cppExpectedRows) {
+        $rowRunDir = Join-Path $cppRunDir ("n_{0}" -f $expected.elements)
+        New-Item -ItemType Directory -Force -Path $rowRunDir | Out-Null
+        $rowArgs = @("-n", [string]$expected.elements, "-o", [string]$expected.order, "-b", "legacy_baseline")
+        Push-Location $rowRunDir
+        try {
+            Invoke-Checked { & $exe @rowArgs } "C++ legacy baseline app"
+        } finally {
+            Pop-Location
+        }
 
-    $cppCsv = Join-Path $cppRunDir "metrics.csv"
-    $cppRows = Import-Csv $cppCsv
-    $observedCppFirstN = [double]$cppRows[0].n_l2_error
-    if ([Math]::Abs($observedCppFirstN - $cppFirstN) -gt 1.0e-12) {
-        throw "C++ baseline first n_L2 mismatch: got $observedCppFirstN expected $cppFirstN"
+        $cppCsv = Join-Path $rowRunDir "metrics.csv"
+        $cppRows = @(Import-Csv $cppCsv)
+        if ($cppRows.Count -ne 1) {
+            throw "C++ baseline emitted $($cppRows.Count) rows for elements=$($expected.elements); expected 1"
+        }
+
+        $observed = $cppRows[0]
+        $summaryRow = [ordered]@{
+            elements = [int]$expected.elements
+            order = [int]$expected.order
+            metrics_csv = $cppCsv
+        }
+        foreach ($field in $cppCompareFields) {
+            $observedValue = [double]$observed.PSObject.Properties[$field].Value
+            $expectedValue = [double]$expected[$field]
+            if ([Math]::Abs($observedValue - $expectedValue) -gt 1.0e-12) {
+                throw "C++ baseline $field mismatch for elements=$($expected.elements): got $observedValue expected $expectedValue"
+            }
+            $summaryRow[$field] = $observedValue
+        }
+        $summaryRow["status"] = "passed"
+        $cppValidatedRows += $summaryRow
     }
     $cppSummary = [ordered]@{
         app = $cppApp
-        metrics_csv = $cppCsv
-        first_n_l2_error = $observedCppFirstN
+        row_count = $cppValidatedRows.Count
+        rows = $cppValidatedRows
+        first_n_l2_error = [double]$cppValidatedRows[0]["n_l2_error"]
         status = "passed"
     }
 
