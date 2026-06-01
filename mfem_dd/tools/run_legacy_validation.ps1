@@ -45,6 +45,7 @@ if ($repoName -like "1D_convection_diffusion") {
     $deviceCompareFunction = "mfemdd.compare_legacy_pn1d"
     $deviceForwardCurrent = 17981.0
     $deviceCqs = -24.835
+    $deviceTerminalCurrent = -13113.0
     $nativeCompareFunction = "mfemdd.compare_legacy_dd1d"
     $cppNativeBackend = "native_mfem"
     $cppNativeAbsTol = 2.0e-12
@@ -134,6 +135,7 @@ if (-not [string]::IsNullOrWhiteSpace($nativeCompareFunction)) {
 $cppSummary = $null
 $cppNativeSummary = $null
 $cppDeviceSummary = $null
+$cppDeviceBridgeSummary = $null
 if (-not $SkipCpp) {
     if (-not (Test-Path (Join-Path $BuildDir "CMakeCache.txt"))) {
         throw "C++ build directory is missing or unconfigured: $BuildDir"
@@ -306,6 +308,42 @@ if (-not $SkipCpp) {
             cv_zero_bias_cqs = $observedCqs
             status = "passed"
         }
+
+        $cppDeviceBridgeRunDir = Join-Path $artifactDir "cpp_device_matlab_bridge"
+        New-Item -ItemType Directory -Force -Path $cppDeviceBridgeRunDir | Out-Null
+        Push-Location $cppDeviceBridgeRunDir
+        try {
+            Invoke-Checked { & $deviceExe -n 16 -o 1 -b matlab_mfem } "C++ device MATLAB-native bridge app"
+        } finally {
+            Pop-Location
+        }
+
+        $cppDeviceBridgeCsv = Join-Path $cppDeviceBridgeRunDir "metrics.csv"
+        $cppDeviceBridgeRows = Import-Csv $cppDeviceBridgeCsv
+        if ($cppDeviceBridgeRows[0].status -ne "native_device_mfem") {
+            throw "C++ device MATLAB bridge status mismatch: got $($cppDeviceBridgeRows[0].status)"
+        }
+        $bridgeForwardCurrent = [double]$cppDeviceBridgeRows[0].iv_forward_current_1v
+        $bridgeCqs = [double]$cppDeviceBridgeRows[0].cv_zero_bias_cqs
+        $bridgeTerminalCurrent = [double]$cppDeviceBridgeRows[0].transient_terminal_current
+        if ([Math]::Abs($bridgeForwardCurrent - $deviceForwardCurrent) -gt 1.0e-12) {
+            throw "C++ device bridge forward-current mismatch: got $bridgeForwardCurrent expected $deviceForwardCurrent"
+        }
+        if ([Math]::Abs($bridgeCqs - $deviceCqs) -gt 1.0e-12) {
+            throw "C++ device bridge Cqs mismatch: got $bridgeCqs expected $deviceCqs"
+        }
+        if ([Math]::Abs($bridgeTerminalCurrent - $deviceTerminalCurrent) -gt 1.0e-12) {
+            throw "C++ device bridge terminal-current mismatch: got $bridgeTerminalCurrent expected $deviceTerminalCurrent"
+        }
+        $cppDeviceBridgeSummary = [ordered]@{
+            app = "dd_device"
+            backend = "matlab_mfem"
+            metrics_csv = $cppDeviceBridgeCsv
+            iv_forward_current_1v = $bridgeForwardCurrent
+            cv_zero_bias_cqs = $bridgeCqs
+            transient_terminal_current = $bridgeTerminalCurrent
+            status = "passed"
+        }
     }
 }
 
@@ -323,6 +361,7 @@ $summary = [ordered]@{
     cpp_legacy_baseline = $cppSummary
     cpp_native_mfem = $cppNativeSummary
     cpp_device_legacy_baseline = $cppDeviceSummary
+    cpp_device_matlab_bridge = $cppDeviceBridgeSummary
     status = "passed"
 }
 

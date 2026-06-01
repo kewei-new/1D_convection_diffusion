@@ -26,6 +26,9 @@ function(add_mfem_dd_app name source)
   add_executable(${name} ${source})
   target_link_libraries(${name} PRIVATE mfem)
   target_compile_features(${name} PRIVATE cxx_std_17)
+  file(TO_CMAKE_PATH "${CMAKE_CURRENT_LIST_DIR}/../matlab" MFEM_DD_MATLAB_DIR)
+  target_compile_definitions(${name} PRIVATE
+    "MFEM_DD_MATLAB_DIR=\"${MFEM_DD_MATLAB_DIR}\"")
 endfunction()
 
 add_mfem_dd_app(dd1d_mms apps/dd1d_mms.cpp)

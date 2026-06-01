@@ -78,12 +78,12 @@ if ($repoName -like "1D_convection_diffusion") {
         ((Test-Passed $summary.matlab_device_baseline) -and $deviceCompare.matches_baseline -and $deviceCompare.matches_full_outputs) `
         "The PN device solve is recomputed from the native MATLAB source mirror and compared to the legacy IV/CV/transient CSV outputs."
     $checks += New-Check "dd_pn_device" "C++ physical outputs" `
-        "legacy_baseline_adapter" "" `
-        (Test-Passed $summary.cpp_device_legacy_baseline) `
-        "C++ device app emits selected PN legacy metrics only."
+        "matlab_native_bridge" $summary.cpp_device_matlab_bridge.metrics_csv `
+        (Test-Passed $summary.cpp_device_matlab_bridge) `
+        "C++ device entry point invokes the MATLAB-native PN solve and emits selected matched metrics."
 
     $gaps += New-Gap "dd_pn_device" "C++ native physical solve" `
-        "The C++ device path still emits selected baseline metrics; no native PN device solver is implemented."
+        "The C++ device path has a MATLAB-native bridge, but no native PN device solver is implemented."
     $gaps += New-Gap "legacy cleanup" "old directory deletion" `
         "No legacy directory is eligible for deletion until each target has legacy, MATLAB-native, and C++ evidence."
 } elseif ($repoName -like "2D_convection_diffusion") {
