@@ -31,7 +31,7 @@ void WriteMetrics(int elements, int order, int dofs, real_t h, real_t n_err,
           "n_relative_l2_error,phi_relative_l2_error,charge_proxy,status\n";
    out << "dd2d_smooth_mms," << elements << ",2," << order << "," << dofs << ","
        << h << "," << n_err << "," << phi_err << "," << n_err << ","
-       << phi_err << "," << charge_proxy << ",implemented\n";
+       << phi_err << "," << charge_proxy << ",scaffold\n";
 }
 }
 

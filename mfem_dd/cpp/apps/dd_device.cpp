@@ -251,7 +251,8 @@ int main(int argc, char *argv[])
    args.AddOption(&order, "-o", "--order", "H1 finite element order.");
    args.AddOption(&dim, "-d", "--dimension", "Mesh dimension: 1 or 2.");
    args.AddOption(&backend, "-b", "--backend",
-                  "Backend: mfem_projection or legacy_baseline.");
+                  "Backend: mfem_projection, legacy_baseline, matlab_mfem, "
+                  "or native_mfem (not implemented for device solves).");
    args.AddOption(&precision, "-p", "--precision", "Output precision.");
    args.Parse();
    if (!args.Good())
@@ -281,6 +282,14 @@ int main(int argc, char *argv[])
        || backend == "matlab_native_bridge")
    {
       return RunMatlabDeviceBridge(elements, order);
+   }
+
+   if (backend == "native_mfem" || backend == "native_cpp_mfem")
+   {
+      cerr << "Native C++ PN device solve is not implemented yet. "
+           << "Use -b matlab_mfem for the MATLAB-native bridge or "
+           << "-b legacy_baseline for stored legacy metrics." << endl;
+      return 5;
    }
 
    Mesh mesh = (dim == 2)
