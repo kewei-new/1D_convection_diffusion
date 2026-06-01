@@ -10,14 +10,14 @@ if backend == "legacy_matlab"
     return;
 end
 
-if backend == "legacy_runtime"
+if backend == "legacy_runtime" || backend == "matlab_mfem"
     table_data = mfemdd.legacy_dd1d_baseline("method", opts.method, ...
         "p_order", opts.p_order, ...
         "run_legacy", true, ...
         "refine_steps", opts.refine_steps, ...
         "ng_base", opts.ng_base, ...
         "verbose", opts.verbose);
-    table_data.backend = "legacy_runtime";
+    table_data.backend = opts.backend;
     return;
 end
 

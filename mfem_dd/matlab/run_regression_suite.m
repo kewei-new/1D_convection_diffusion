@@ -54,7 +54,8 @@ if ~isempty(opts.elements)
     elements = opts.elements;
     return;
 end
-if lower(opts.backend) == "legacy_runtime" || lower(opts.backend) == "legacy_matlab"
+if lower(opts.backend) == "legacy_runtime" || lower(opts.backend) == "legacy_matlab" ...
+        || lower(opts.backend) == "matlab_mfem"
     if is_1d_repo
         if opts.quick
             elements = [20, 40];

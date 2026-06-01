@@ -61,6 +61,13 @@ classdef CaseRunner
                 metrics = mfemdd.CaseRunner.runLegacyRuntimeSmoothMMS1D(opts);
                 return;
             end
+            if lower(opts.backend) == "matlab_mfem"
+                metrics = mfemdd.CaseRunner.runLegacyRuntimeSmoothMMS1D(opts);
+                return;
+            end
+            if lower(opts.backend) ~= "mfem_projection"
+                error("Unknown DD1D backend: %s", opts.backend);
+            end
 
             domain_length = 2.0 * pi;
             mesh = mfemdd.Mesh.MakeCartesian1D(opts.elements, domain_length);
