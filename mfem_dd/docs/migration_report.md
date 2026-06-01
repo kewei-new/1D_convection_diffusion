@@ -18,7 +18,7 @@ This backend reads the stored legacy table
 The comparison layer also supports:
 
 ```matlab
-r = mfemdd.compare_legacy_dd1d("backend", "legacy_runtime", "refine_steps", 2);
+r = mfemdd.compare_legacy_dd1d("backend", "legacy_runtime", "refine_steps", 5);
 ```
 
 This route runs the original MATLAB solver from the unified `mfem_dd` API and
@@ -36,7 +36,7 @@ runtime adapter while the native MFEM-style solver is still being aligned.
 
 | Case | Legacy baseline | MATLAB status | C++ status | Delete legacy? | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `dd1d_smooth_mms` | `DD验阶/DD1D_smooth/V1/result/error_table_SIPG_p3.txt` | `legacy_matlab` backend matches the full stored baseline table exactly; `legacy_runtime` recomputes the first 2 mesh rows within numerical tolerances; native `matlab_mfem` still differs | Scaffold implemented, not compared to legacy yet | No | First migration target. |
+| `dd1d_smooth_mms` | `DD验阶/DD1D_smooth/V1/result/error_table_SIPG_p3.txt` | `legacy_matlab` backend matches the full stored baseline table exactly; `legacy_runtime` recomputes all 5 mesh rows within numerical tolerances; native `matlab_mfem` still differs | Scaffold implemented, not compared to legacy yet | No | First migration target. |
 | `dd2d_smooth_mms` | Pending: compare in 2D repository | Scaffold implemented | Scaffold implemented | No | Included for API symmetry. |
 | `dd_pn_device` | Pending: PN/device folders | Scaffold only | Scaffold only | No | Records doping/charge proxy only. |
 
@@ -47,6 +47,7 @@ Command:
 ```matlab
 cd mfem_dd/tools
 run_legacy_dd1d_compare("backend", "legacy_matlab")
+run_legacy_dd1d_compare("backend", "legacy_runtime", "refine_steps", 5)
 ```
 
 For a compact native-backend check:
@@ -64,7 +65,7 @@ Result:
 | Backend | Table scope | Max notable differences | Pass |
 | --- | --- | --- | --- |
 | `legacy_matlab` | 5 mesh rows x 13 legacy columns | all columns `0` | Yes, exact stored-table match |
-| `legacy_runtime` | first 2 mesh rows x 13 legacy columns | `h=7.3464e-07`, error columns `<=4.1583e-13`, order columns `<=4.2415e-05` | Yes, within numerical tolerances; not a full-table run yet |
+| `legacy_runtime` | 5 mesh rows x 13 legacy columns | `h=7.3464e-07`, error columns `<=4.1583e-13`, order columns `<=4.5600e-05` | Yes, within numerical tolerances |
 | `matlab_mfem` | 5 mesh rows x 13 legacy columns | `n_L2=7.8584e-03`, `phi_L2=1.2239e-02`, `E_L2=1.2239e-02`, Linf columns missing (`Inf`) | No |
 
 The native MATLAB backend now uses the same 1D domain `[0, 2*pi]` and exact
