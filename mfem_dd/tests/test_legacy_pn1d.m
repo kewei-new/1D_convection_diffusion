@@ -18,7 +18,13 @@ assert(abs(baseline.summary.transient_first_finite_current + 406000.0) <= 1.0e-8
 metrics = run_case("dd_pn_device", "backend", "matlab_mfem");
 assert(metrics.status == "legacy_device_baseline");
 assert(abs(metrics.iv_forward_current_1v - baseline.summary.iv_forward_current_1v) <= 1.0e-12);
+assert(height(metrics.iv_table) == height(baseline.iv));
+assert(max(abs(metrics.iv_table.right_current - baseline.iv.right_current)) == 0.0);
 
 report = mfemdd.compare_legacy_pn1d("backend", "matlab_mfem");
 assert(report.matches_baseline);
+assert(report.matches_full_outputs);
+assert(report.table_report.iv_curve.max_abs_diff == 0.0);
+assert(report.table_report.cv_curve.max_abs_diff == 0.0);
+assert(report.table_report.transient_current.max_abs_diff == 0.0);
 end

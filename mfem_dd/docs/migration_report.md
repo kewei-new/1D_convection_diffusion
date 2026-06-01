@@ -71,8 +71,9 @@ It reads the legacy CSV outputs under
 - `transient_current.csv`
 
 The current `matlab_mfem` device path is a verified baseline adapter: it
-reports the stored physical metrics through the unified MFEM-style API. It is
-not yet an independent native recomputation of the PN junction solve.
+reports the stored physical metrics and full legacy CSV tables through the
+unified MFEM-style API. It is not yet an independent native recomputation of the
+PN junction solve.
 
 The C++ `dd_device` app also has a 1D PN baseline mode:
 
@@ -164,8 +165,9 @@ Latest PN/device physical-output check:
 | `transient_current.csv` | terminal transient current | `-13113` at `t=0.2` | Yes |
 
 `mfemdd.compare_legacy_pn1d("backend", "matlab_mfem")` reports zero
-difference for these selected metrics. `dd_device -b legacy_baseline` emits the
-same selected values in C++ CSV form.
+difference for these selected metrics and for the full numeric contents of
+`iv_curve.csv`, `cv_curve.csv`, and `transient_current.csv`.
+`dd_device -b legacy_baseline` emits the same selected values in C++ CSV form.
 
 Latest validation-suite check:
 

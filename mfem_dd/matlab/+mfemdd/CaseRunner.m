@@ -185,6 +185,9 @@ classdef CaseRunner
             metrics.legacy_iv_source = baseline.iv_source;
             metrics.legacy_cv_source = baseline.cv_source;
             metrics.legacy_transient_source = baseline.transient_source;
+            metrics.iv_table = baseline.iv;
+            metrics.cv_table = baseline.cv;
+            metrics.transient_table = baseline.transient;
             metrics.status = "legacy_device_baseline";
         end
 
