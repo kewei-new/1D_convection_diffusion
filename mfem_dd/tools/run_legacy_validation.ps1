@@ -129,6 +129,11 @@ $matlabCommand = "cd('$matlabDir'); startup_mfem_dd; " +
 if (-not [string]::IsNullOrWhiteSpace($deviceCompareFunction)) {
     $deviceJson = Convert-ToMatlabPath (Join-Path $artifactDir "legacy_device_compare.json")
     $matlabCommand += " d=$deviceCompareFunction('backend','matlab_mfem','output_json','$deviceJson'); assert(d.matches_baseline);"
+    $pnOperatorJson = Convert-ToMatlabPath (Join-Path $artifactDir "native_pn_operator_snapshot.json")
+    $matlabCommand += " pnos=mfemdd.dd1d_native_pn_operator_snapshot('output_json','$pnOperatorJson');" +
+        " assert(pnos.space.total_dofs==480);" +
+        " assert(abs(pnos.current.initial_right_contact-937499.5687136018)<1e-6);" +
+        " assert(abs(pnos.current.step_right_contact-443761.54836405866)<1e-6);"
 }
 if (-not [string]::IsNullOrWhiteSpace($nativeCompareFunction)) {
     $nativeJson = Convert-ToMatlabPath (Join-Path $artifactDir "native_matlab_compare.json")
@@ -145,6 +150,7 @@ if ([Math]::Abs($observedRegressionFirstN - $regressionFirstN) -gt 1.0e-12) {
 }
 
 $matlabDeviceSummary = $null
+$matlabPNOperatorSummary = $null
 if (-not [string]::IsNullOrWhiteSpace($deviceCompareFunction)) {
     $deviceReport = Get-Content (Join-Path $artifactDir "legacy_device_compare.json") -Raw | ConvertFrom-Json
     $matlabDeviceSummary = [ordered]@{
@@ -154,6 +160,43 @@ if (-not [string]::IsNullOrWhiteSpace($deviceCompareFunction)) {
         current_status = $deviceReport.current_status
         iv_forward_current_1v = $deviceForwardCurrent
         cv_zero_bias_cqs = $deviceCqs
+        status = "passed"
+    }
+
+    $pnOperatorSnapshotPath = Join-Path $artifactDir "native_pn_operator_snapshot.json"
+    $pnOperatorSnapshot = Get-Content $pnOperatorSnapshotPath -Raw | ConvertFrom-Json
+    $expectedPNOperator = [ordered]@{
+        total_dofs = 480.0
+        n0_norm2 = 3542566.89286449
+        rhs0_norm2 = 403973.48589950806
+        n_step_norm2 = 3517692.30739153
+        initial_right_contact = 937499.5687136018
+        step_right_contact = 443761.54836405866
+    }
+    $observedPNOperator = [ordered]@{
+        total_dofs = [double]$pnOperatorSnapshot.space.total_dofs
+        n0_norm2 = [double]$pnOperatorSnapshot.vectors.n0.norm2
+        rhs0_norm2 = [double]$pnOperatorSnapshot.vectors.rhs0.norm2
+        n_step_norm2 = [double]$pnOperatorSnapshot.vectors.n_step.norm2
+        initial_right_contact = [double]$pnOperatorSnapshot.current.initial_right_contact
+        step_right_contact = [double]$pnOperatorSnapshot.current.step_right_contact
+    }
+    foreach ($field in $expectedPNOperator.Keys) {
+        $absDiff = [Math]::Abs([double]$observedPNOperator[$field] - [double]$expectedPNOperator[$field])
+        if ($absDiff -gt 1.0e-6) {
+            throw "MATLAB PN operator snapshot $field mismatch: got $($observedPNOperator[$field]) expected $($expectedPNOperator[$field]) abs_diff=$absDiff"
+        }
+    }
+    $matlabPNOperatorSummary = [ordered]@{
+        snapshot_json = $pnOperatorSnapshotPath
+        backend = "native_matlab_pn_operator_snapshot"
+        total_dofs = [int]$observedPNOperator["total_dofs"]
+        n0_norm2 = [double]$observedPNOperator["n0_norm2"]
+        rhs0_norm2 = [double]$observedPNOperator["rhs0_norm2"]
+        n_step_norm2 = [double]$observedPNOperator["n_step_norm2"]
+        initial_right_contact = [double]$observedPNOperator["initial_right_contact"]
+        step_right_contact = [double]$observedPNOperator["step_right_contact"]
+        checked_summary_fields = $expectedPNOperator.Count
         status = "passed"
     }
 }
@@ -427,6 +470,7 @@ $summary = [ordered]@{
         status = "passed"
     }
     matlab_device_baseline = $matlabDeviceSummary
+    matlab_pn_operator_snapshot = $matlabPNOperatorSummary
     matlab_native_mfem = $matlabNativeSummary
     cpp_legacy_baseline = $cppSummary
     cpp_native_mfem = $cppNativeSummary

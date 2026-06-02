@@ -77,6 +77,14 @@ if ($repoName -like "1D_convection_diffusion") {
         "native_matlab_mfem" $summary.matlab_device_baseline.compare_json `
         ((Test-Passed $summary.matlab_device_baseline) -and $deviceCompare.matches_baseline -and $deviceCompare.matches_full_outputs) `
         "The PN device solve is recomputed from the native MATLAB source mirror and compared to the legacy IV/CV/transient CSV outputs."
+    $checks += New-Check "dd_pn_device" "MATLAB native PDE operator snapshot" `
+        "native_matlab_pn_operator_snapshot" $summary.matlab_pn_operator_snapshot.snapshot_json `
+        ((Test-Passed $summary.matlab_pn_operator_snapshot) -and `
+            $summary.matlab_pn_operator_snapshot.total_dofs -eq 480 -and `
+            $summary.matlab_pn_operator_snapshot.checked_summary_fields -eq 6 -and `
+            $summary.matlab_pn_operator_snapshot.n_step_norm2 -gt 0 -and `
+            $summary.matlab_pn_operator_snapshot.step_right_contact -gt 0) `
+        "MATLAB-native PN device exports diffusion, LDG Poisson, first transport RHS, one IMEX-step, and contact-current summaries for the C++ port target."
     $checks += New-Check "dd_pn_device" "C++ physical outputs" `
         "matlab_native_bridge" $summary.cpp_device_matlab_bridge.metrics_csv `
         ((Test-Passed $summary.cpp_device_matlab_bridge) -and `
@@ -89,7 +97,7 @@ if ($repoName -like "1D_convection_diffusion") {
         "C++ native_mfem device path emits all compact PN IV/CV/transient summary metrics without invoking MATLAB."
 
     $gaps += New-Gap "dd_pn_device" "C++ native physical solve" `
-        "The C++ device path has native compact table evidence, but no PDE-level native PN device solver is implemented."
+        "The C++ device path has native compact table evidence and a MATLAB PDE operator/step reference, but no PDE-level native PN device solver is implemented."
     $gaps += New-Gap "legacy cleanup" "old directory deletion" `
         "No legacy directory is eligible for deletion until each target has legacy, MATLAB-native, and C++ evidence."
 } elseif ($repoName -like "2D_convection_diffusion") {
