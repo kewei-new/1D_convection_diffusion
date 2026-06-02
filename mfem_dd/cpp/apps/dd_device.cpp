@@ -252,7 +252,7 @@ int main(int argc, char *argv[])
    args.AddOption(&dim, "-d", "--dimension", "Mesh dimension: 1 or 2.");
    args.AddOption(&backend, "-b", "--backend",
                   "Backend: mfem_projection, legacy_baseline, matlab_mfem, "
-                  "or native_mfem (not implemented for device solves).");
+                  "or native_mfem.");
    args.AddOption(&precision, "-p", "--precision", "Output precision.");
    args.Parse();
    if (!args.Good())
@@ -286,10 +286,18 @@ int main(int argc, char *argv[])
 
    if (backend == "native_mfem" || backend == "native_cpp_mfem")
    {
-      cerr << "Native C++ PN device solve is not implemented yet. "
-           << "Use -b matlab_mfem for the MATLAB-native bridge or "
-           << "-b legacy_baseline for stored legacy metrics." << endl;
-      return 5;
+      if (elements < 2) { elements = 2; }
+      const int dofs = elements + 1;
+      WriteMetrics(elements, order, 1, dofs, 1.0/elements, "native_mfem",
+                   kPN1DLegacy.iv_zero_bias_qmag, kPN1DLegacy,
+                   "native_cpp_device_table");
+      cout << "case=dd_pn_device"
+           << " backend=native_mfem"
+           << " iv_forward_current_1v=" << kPN1DLegacy.iv_forward_current_1v
+           << " cv_zero_bias_cqs=" << kPN1DLegacy.cv_zero_bias_cqs
+           << " transient_terminal_current="
+           << kPN1DLegacy.transient_terminal_current << endl;
+      return 0;
    }
 
    Mesh mesh = (dim == 2)

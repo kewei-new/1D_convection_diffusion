@@ -25,6 +25,26 @@ function Invoke-Checked([scriptblock]$Command, [string]$Label) {
     }
 }
 
+function Assert-CsvFieldsClose(
+    [object]$Row,
+    [hashtable]$Expected,
+    [double]$Tolerance,
+    [string]$Label
+) {
+    foreach ($field in $Expected.Keys) {
+        $property = $Row.PSObject.Properties[$field]
+        if ($null -eq $property) {
+            throw "$Label missing field $field"
+        }
+        $observed = [double]$property.Value
+        $expectedValue = [double]$Expected[$field]
+        $absDiff = [Math]::Abs($observed - $expectedValue)
+        if ($absDiff -gt $Tolerance) {
+            throw "$Label $field mismatch: got $observed expected $expectedValue abs_diff=$absDiff tolerance=$Tolerance"
+        }
+    }
+}
+
 if ($repoName -like "1D_convection_diffusion") {
     $compareFunction = "mfemdd.compare_legacy_dd1d"
     $refineSteps = 5
@@ -46,6 +66,20 @@ if ($repoName -like "1D_convection_diffusion") {
     $deviceForwardCurrent = 17981.0
     $deviceCqs = -24.835
     $deviceTerminalCurrent = -13113.0
+    $deviceExpectedSummary = @{
+        iv_rows = 9.0
+        cv_rows = 7.0
+        transient_rows = 108.0
+        iv_reverse_current_minus1v = -18006.0
+        iv_zero_bias_current = 0.019603
+        iv_forward_current_1v = 17981.0
+        iv_zero_bias_qmag = 2612.5
+        cv_zero_bias_cqs = -24.835
+        transient_first_finite_time = 0.001875
+        transient_first_finite_current = -406000.0
+        transient_terminal_time = 0.2
+        transient_terminal_current = -13113.0
+    }
     $nativeCompareFunction = "mfemdd.compare_legacy_dd1d"
     $cppNativeBackend = "native_mfem"
     $cppNativeAbsTol = 2.0e-12
@@ -74,6 +108,7 @@ if ($repoName -like "1D_convection_diffusion") {
     $deviceCompareFunction = ""
     $deviceForwardCurrent = $null
     $deviceCqs = $null
+    $deviceExpectedSummary = @{}
     $nativeCompareFunction = ""
     $cppNativeBackend = ""
     $cppNativeAbsTol = $null
@@ -136,6 +171,7 @@ $cppSummary = $null
 $cppNativeSummary = $null
 $cppDeviceSummary = $null
 $cppDeviceBridgeSummary = $null
+$cppDeviceNativeSummary = $null
 if (-not $SkipCpp) {
     if (-not (Test-Path (Join-Path $BuildDir "CMakeCache.txt"))) {
         throw "C++ build directory is missing or unconfigured: $BuildDir"
@@ -293,6 +329,8 @@ if (-not $SkipCpp) {
 
         $cppDeviceCsv = Join-Path $cppDeviceRunDir "metrics.csv"
         $cppDeviceRows = Import-Csv $cppDeviceCsv
+        Assert-CsvFieldsClose $cppDeviceRows[0] $deviceExpectedSummary 1.0e-12 `
+            "C++ device legacy baseline"
         $observedForwardCurrent = [double]$cppDeviceRows[0].iv_forward_current_1v
         $observedCqs = [double]$cppDeviceRows[0].cv_zero_bias_cqs
         if ([Math]::Abs($observedForwardCurrent - $deviceForwardCurrent) -gt 1.0e-12) {
@@ -306,6 +344,8 @@ if (-not $SkipCpp) {
             metrics_csv = $cppDeviceCsv
             iv_forward_current_1v = $observedForwardCurrent
             cv_zero_bias_cqs = $observedCqs
+            transient_terminal_current = [double]$cppDeviceRows[0].transient_terminal_current
+            checked_summary_fields = $deviceExpectedSummary.Count
             status = "passed"
         }
 
@@ -323,6 +363,8 @@ if (-not $SkipCpp) {
         if ($cppDeviceBridgeRows[0].status -ne "native_device_mfem") {
             throw "C++ device MATLAB bridge status mismatch: got $($cppDeviceBridgeRows[0].status)"
         }
+        Assert-CsvFieldsClose $cppDeviceBridgeRows[0] $deviceExpectedSummary 1.0e-12 `
+            "C++ device MATLAB bridge"
         $bridgeForwardCurrent = [double]$cppDeviceBridgeRows[0].iv_forward_current_1v
         $bridgeCqs = [double]$cppDeviceBridgeRows[0].cv_zero_bias_cqs
         $bridgeTerminalCurrent = [double]$cppDeviceBridgeRows[0].transient_terminal_current
@@ -342,6 +384,34 @@ if (-not $SkipCpp) {
             iv_forward_current_1v = $bridgeForwardCurrent
             cv_zero_bias_cqs = $bridgeCqs
             transient_terminal_current = $bridgeTerminalCurrent
+            checked_summary_fields = $deviceExpectedSummary.Count
+            status = "passed"
+        }
+
+        $cppDeviceNativeRunDir = Join-Path $artifactDir "cpp_device_native_mfem"
+        New-Item -ItemType Directory -Force -Path $cppDeviceNativeRunDir | Out-Null
+        Push-Location $cppDeviceNativeRunDir
+        try {
+            Invoke-Checked { & $deviceExe -n 16 -o 1 -b native_mfem } "C++ native device summary app"
+        } finally {
+            Pop-Location
+        }
+
+        $cppDeviceNativeCsv = Join-Path $cppDeviceNativeRunDir "metrics.csv"
+        $cppDeviceNativeRows = Import-Csv $cppDeviceNativeCsv
+        if ($cppDeviceNativeRows[0].status -ne "native_cpp_device_table") {
+            throw "C++ native device summary status mismatch: got $($cppDeviceNativeRows[0].status)"
+        }
+        Assert-CsvFieldsClose $cppDeviceNativeRows[0] $deviceExpectedSummary 1.0e-12 `
+            "C++ native device summary"
+        $cppDeviceNativeSummary = [ordered]@{
+            app = "dd_device"
+            backend = "native_mfem"
+            metrics_csv = $cppDeviceNativeCsv
+            iv_forward_current_1v = [double]$cppDeviceNativeRows[0].iv_forward_current_1v
+            cv_zero_bias_cqs = [double]$cppDeviceNativeRows[0].cv_zero_bias_cqs
+            transient_terminal_current = [double]$cppDeviceNativeRows[0].transient_terminal_current
+            checked_summary_fields = $deviceExpectedSummary.Count
             status = "passed"
         }
     }
@@ -362,6 +432,7 @@ $summary = [ordered]@{
     cpp_native_mfem = $cppNativeSummary
     cpp_device_legacy_baseline = $cppDeviceSummary
     cpp_device_matlab_bridge = $cppDeviceBridgeSummary
+    cpp_device_native_mfem = $cppDeviceNativeSummary
     status = "passed"
 }
 

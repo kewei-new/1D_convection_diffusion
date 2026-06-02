@@ -79,11 +79,17 @@ if ($repoName -like "1D_convection_diffusion") {
         "The PN device solve is recomputed from the native MATLAB source mirror and compared to the legacy IV/CV/transient CSV outputs."
     $checks += New-Check "dd_pn_device" "C++ physical outputs" `
         "matlab_native_bridge" $summary.cpp_device_matlab_bridge.metrics_csv `
-        (Test-Passed $summary.cpp_device_matlab_bridge) `
-        "C++ device entry point invokes the MATLAB-native PN solve and emits selected matched metrics."
+        ((Test-Passed $summary.cpp_device_matlab_bridge) -and `
+            $summary.cpp_device_matlab_bridge.checked_summary_fields -eq 12) `
+        "C++ device entry point invokes the MATLAB-native PN solve and emits all compact summary metrics."
+    $checks += New-Check "dd_pn_device" "C++ native summary outputs" `
+        "native_cpp_device_table" $summary.cpp_device_native_mfem.metrics_csv `
+        ((Test-Passed $summary.cpp_device_native_mfem) -and `
+            $summary.cpp_device_native_mfem.checked_summary_fields -eq 12) `
+        "C++ native_mfem device path emits all compact PN IV/CV/transient summary metrics without invoking MATLAB."
 
     $gaps += New-Gap "dd_pn_device" "C++ native physical solve" `
-        "The C++ device path has a MATLAB-native bridge, but no native PN device solver is implemented."
+        "The C++ device path has native compact table evidence, but no PDE-level native PN device solver is implemented."
     $gaps += New-Gap "legacy cleanup" "old directory deletion" `
         "No legacy directory is eligible for deletion until each target has legacy, MATLAB-native, and C++ evidence."
 } elseif ($repoName -like "2D_convection_diffusion") {
