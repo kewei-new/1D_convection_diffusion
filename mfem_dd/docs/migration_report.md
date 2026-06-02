@@ -95,6 +95,7 @@ The C++ `dd_device` app also has a 1D PN baseline mode:
 dd_device -n 16 -o 1 -b legacy_baseline
 dd_device -n 16 -o 1 -b matlab_mfem
 dd_device -n 16 -o 1 -b native_mfem
+dd_device -n 160 -o 2 -b native_operator_snapshot
 ```
 
 The baseline mode writes the stored compact PN metrics into `metrics.csv`.
@@ -102,7 +103,10 @@ The `matlab_mfem` mode invokes the MATLAB-native PN solve through the C++ entry
 point and writes the same compact metrics with `status=native_device_mfem`.
 The `native_mfem` mode emits the same compact IV/CV/transient summary evidence
 from C++ without invoking MATLAB, with `status=native_cpp_device_table`. This is
-not yet a PDE-level native C++ PN device solver.
+not yet a PDE-level native C++ PN device solver. The `native_operator_snapshot`
+mode assembles the native C++ PN diffusion, LDG Poisson, transport RHS, and one
+IMEX step, then writes operator/state/current summaries with
+`status=native_cpp_pn_operator_snapshot`.
 
 The MATLAB-native PN path also exports a PDE-level operator and one-step
 snapshot for the C++ port target:
@@ -127,9 +131,12 @@ It runs the full MATLAB legacy-runtime table comparison, MATLAB PN device CSV
 comparison, quick MATLAB legacy-runtime regression, C++ build, CTest, the C++
 MMS legacy-baseline app for all 5 embedded legacy mesh rows, the C++ native
 MFEM MMS backend against the MATLAB-native full-precision table, the C++ PN
-device legacy-baseline app, and the C++ PN device MATLAB-native bridge.
-CTest also includes a `dd_device -b native_mfem` negative test so the unsupported
-native device backend cannot silently fall through to the scaffold path.
+device legacy-baseline app, the C++ PN device MATLAB-native bridge, the C++
+native compact PN summary backend, and the C++ PN native operator/one-step
+snapshot.
+CTest also includes both `dd_device -b native_mfem` and
+`dd_device -b native_operator_snapshot` so these device paths cannot silently
+fall through to the scaffold path.
 Generated reports are written under
 `mfem_dd/artifacts/legacy_validation/`.
 
@@ -158,7 +165,7 @@ delete legacy folders.
 | --- | --- | --- | --- | --- | --- |
 | `dd1d_smooth_mms` | `DD验阶/DD1D_smooth/V1/result/error_table_SIPG_p3.txt` | default `matlab_mfem` uses self-contained `mfem_dd` MATLAB-native IPDG/LDG/IMEX code and matches all 5 mesh rows within numerical tolerances; explicit `legacy_runtime` remains as old-runtime cross-check; `legacy_matlab` matches the stored table exactly; `mfem_projection` remains scaffold-only | `dd1d_mms -b legacy_baseline` writes stored legacy metrics and validation checks all 5 embedded rows; `dd1d_mms -b native_mfem` runs the native C++ IPDG/LDG/IMEX backend and matches the MATLAB-native table within `2e-12` absolute tolerance | No | First migration target. |
 | `dd2d_smooth_mms` | Pending: compare in 2D repository | Scaffold implemented | Scaffold implemented | No | Included for API symmetry. |
-| `dd_pn_device` | `DD*/V3/DD1D_pn_junction/result/pn_junction/{iv_curve.csv,cv_curve.csv,transient_current.csv}` | default `matlab_mfem` recomputes the PN solve from `mfem_dd/matlab/native/dd1d_pn_junction` and matches the full legacy CSV outputs; `mfemdd.dd1d_native_pn_operator_snapshot` exports native MATLAB PDE operator/one-step summaries for C++ port alignment; `legacy_matlab` and `legacy_runtime` still read the stored CSV baseline; `mfem_projection` remains scaffold-only | `dd_device -b legacy_baseline` writes the stored compact legacy PN metrics; `dd_device -b matlab_mfem` invokes the MATLAB-native PN solve and emits matched compact metrics; `dd_device -b native_mfem` emits matched compact summary metrics from C++ without invoking MATLAB | No | MATLAB-native physical path closed and PDE-level MATLAB snapshot exists; C++ compact physical-output evidence is available; native C++ PDE-level physical path remains open. |
+| `dd_pn_device` | `DD*/V3/DD1D_pn_junction/result/pn_junction/{iv_curve.csv,cv_curve.csv,transient_current.csv}` | default `matlab_mfem` recomputes the PN solve from `mfem_dd/matlab/native/dd1d_pn_junction` and matches the full legacy CSV outputs; `mfemdd.dd1d_native_pn_operator_snapshot` exports native MATLAB PDE operator/one-step summaries for C++ port alignment; `legacy_matlab` and `legacy_runtime` still read the stored CSV baseline; `mfem_projection` remains scaffold-only | `dd_device -b legacy_baseline` writes the stored compact legacy PN metrics; `dd_device -b matlab_mfem` invokes the MATLAB-native PN solve and emits matched compact metrics; `dd_device -b native_mfem` emits matched compact summary metrics from C++ without invoking MATLAB; `dd_device -b native_operator_snapshot` assembles the native C++ PN PDE operator and matches the MATLAB operator/one-step snapshot | No | MATLAB-native physical path closed and PDE-level MATLAB snapshot exists; C++ compact physical-output evidence and native PDE operator/one-step evidence are available; full native C++ PN IV/CV/transient PDE solve remains open. |
 
 ## Latest 1D Full-Table Comparison
 
@@ -243,7 +250,18 @@ Latest MATLAB-native PN operator/step snapshot:
 The validation suite now writes this snapshot to
 `mfem_dd/artifacts/legacy_validation/native_pn_operator_snapshot.json` and
 checks six compact PDE summary fields. This is the native MATLAB reference for
-the still-open C++ PN PDE port.
+the C++ PN PDE operator port.
+
+Latest C++ native PN operator/step snapshot:
+
+| Command | DOFs | `diffusion` Frobenius norm | `rhs0` norm | `n_step` norm | Step right contact | Max abs diff vs MATLAB snapshot | Pass |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `dd_device -n 160 -o 2 -b native_operator_snapshot` | `480` | `2.858759678729157e+03` | `4.039734858993614e+05` | `3.517692307391699e+06` | `4.437615483691919e+05` | `5.133217200636864e-06` | Yes |
+
+The validation suite checks 19 C++ summary fields against
+`native_pn_operator_snapshot.json`, including diffusion, LDG Poisson RHS,
+implicit matrix norm, stage RHS/state norms, one-step state/field norms, and
+contact-current summaries.
 
 Latest validation-suite check:
 
@@ -269,9 +287,9 @@ recomputes the device experiments and matches the old IV/CV/transient CSV
 outputs. The C++ native smooth MMS path is available through
 `dd1d_mms -b native_mfem`; it follows the same modal DG/IPDG/LDG/IMEX algorithm
 and is validated against the MATLAB-native table with a small absolute
-tolerance. The remaining native gap in this repository is the C++ device-oriented
-PDE solve. The C++ device entry now has a native compact summary backend, but it
-does not yet recompute the PN IV/CV/transient experiment from a C++ PDE solver.
+tolerance. The C++ device entry now has a native compact summary backend and a
+native PDE operator/one-step snapshot. The remaining native gap in this
+repository is the full C++ device-oriented PN IV/CV/transient PDE solve.
 
 Only the selected 1D PN junction CSV outputs have been validated so far. 2D
 device-oriented physical simulations and any independent native MATLAB/C++

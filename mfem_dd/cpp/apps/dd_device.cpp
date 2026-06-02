@@ -1,5 +1,6 @@
 #include "mfem.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <fstream>
@@ -10,6 +11,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #ifdef _WIN32
@@ -53,6 +55,871 @@ constexpr DeviceSummary kPN1DLegacy = {
    -18006.0, 0.019603, 17981.0, 2612.5, -24.835,
    0.001875, -406000.0, 0.2, -13113.0
 };
+
+constexpr real_t kPNLeft = 0.0;
+constexpr real_t kPNRight = 0.6;
+constexpr real_t kPNMobility = 0.75;
+constexpr real_t kPNThermalVoltage = 0.138046e-4*300.0/0.1602;
+constexpr real_t kPNDiffusion = kPNMobility*kPNThermalVoltage;
+constexpr real_t kPNPoissonScale = 0.1602/(11.7*8.85418);
+constexpr real_t kPNNi = 0.014;
+constexpr real_t kPNBias = 1.5;
+constexpr real_t kPNContactDensityLeft = 5.0e5;
+constexpr real_t kPNContactDensityRight = 5.0e5;
+
+struct GaussPoint
+{
+   real_t x;
+   real_t w;
+};
+
+struct MatrixStats
+{
+   int rows = 0;
+   int cols = 0;
+   int nnz = 0;
+   real_t fro_norm = 0.0;
+   real_t one_norm = 0.0;
+   real_t inf_norm = 0.0;
+   real_t value_sum = 0.0;
+   real_t abs_sum = 0.0;
+   real_t weighted_sum = 0.0;
+};
+
+struct VectorStats
+{
+   int size = 0;
+   real_t min = 0.0;
+   real_t max = 0.0;
+   real_t mean = 0.0;
+   real_t norm2 = 0.0;
+   real_t value_sum = 0.0;
+   real_t abs_sum = 0.0;
+   real_t weighted_sum = 0.0;
+};
+
+struct PNCurrentSummary
+{
+   real_t left_contact = 0.0;
+   real_t right_contact = 0.0;
+   real_t domain_average = 0.0;
+};
+
+int ModalIndex(int cell, int mode, int order)
+{
+   return cell*(order + 1) + mode;
+}
+
+real_t ModalBasis(real_t x, int mode)
+{
+   switch (mode)
+   {
+      case 0: return 1.0;
+      case 1: return x;
+      case 2: return x*x - 1.0/12.0;
+      case 3: return x*x*x - 0.15*x;
+      case 4: return (x*x - 3.0/14.0)*x*x + 3.0/560.0;
+      default: throw runtime_error("Unsupported PN modal basis order.");
+   }
+}
+
+real_t ModalBasisX(real_t x, int mode)
+{
+   switch (mode)
+   {
+      case 0: return 0.0;
+      case 1: return 1.0;
+      case 2: return 2.0*x;
+      case 3: return 3.0*x*x - 0.15;
+      case 4: return 4.0*x*x*x - 3.0/7.0*x;
+      default: throw runtime_error("Unsupported PN modal basis derivative order.");
+   }
+}
+
+vector<real_t> PNInverseMass(int order)
+{
+   switch (order)
+   {
+      case 1: return {1.0, 12.0};
+      case 2: return {1.0, 12.0, 180.0};
+      case 3: return {1.0, 12.0, 180.0, 2800.0};
+      default: throw runtime_error("PN native snapshot supports orders 1-3.");
+   }
+}
+
+vector<GaussPoint> GaussLobatto(int order)
+{
+   if (order == 1)
+   {
+      return {{-0.5, 1.0/6.0}, {0.5, 1.0/6.0}, {0.0, 2.0/3.0}};
+   }
+   if (order == 2)
+   {
+      return {{-0.5, 1.0/12.0}, {0.5, 1.0/12.0},
+              {-std::sqrt(5.0)/10.0, 5.0/12.0},
+              { std::sqrt(5.0)/10.0, 5.0/12.0}};
+   }
+   if (order == 3)
+   {
+      return {{-0.5, 1.0/20.0}, {0.5, 1.0/20.0},
+              {-std::sqrt(21.0)/14.0, 49.0/180.0},
+              { std::sqrt(21.0)/14.0, 49.0/180.0},
+              {0.0, 64.0/180.0}};
+   }
+   throw runtime_error("Unsupported Gauss-Lobatto order.");
+}
+
+vector<GaussPoint> GaussLegendre4()
+{
+   return {{-0.8611363115940526/2.0, 0.3478548451374538/2.0},
+           {-0.3399810435848563/2.0, 0.6521451548625461/2.0},
+           { 0.3399810435848563/2.0, 0.6521451548625461/2.0},
+           { 0.8611363115940526/2.0, 0.3478548451374538/2.0}};
+}
+
+real_t PNDopingProfile(real_t x)
+{
+   const real_t ya = 5.0e5;
+   const real_t yb = 2.0e3;
+   const real_t xl = 0.1;
+   const real_t xr = 0.5;
+   const real_t width = 0.06;
+   const real_t half_width = width/2.0;
+   const real_t xll = xl - half_width;
+   const real_t xlr = xl + half_width;
+   const real_t xrl = xr - half_width;
+   const real_t xrr = xr + half_width;
+   if (x < xll) { return ya; }
+   if (x < xlr)
+   {
+      const real_t yr = (x - xll)/(width + 1.0e-20);
+      const real_t one_minus = 1.0 - yr*yr*yr;
+      return (ya - yb)*one_minus*one_minus*one_minus + yb;
+   }
+   if (x < xrl) { return yb; }
+   if (x < xrr)
+   {
+      const real_t yr = (x - xrl)/(width + 1.0e-20);
+      const real_t one_minus = 1.0 - yr*yr*yr;
+      return (yb - ya)*one_minus*one_minus*one_minus + ya;
+   }
+   return ya;
+}
+
+real_t PNPhiLeft()
+{
+   return kPNThermalVoltage
+          *std::log(std::max(PNDopingProfile(kPNLeft), 1.0e-12)/kPNNi);
+}
+
+real_t PNPhiRight()
+{
+   return PNPhiLeft() + kPNBias;
+}
+
+real_t EvalModal(const Vector &u, int cell, int order, real_t xi)
+{
+   real_t value = 0.0;
+   for (int mode = 0; mode <= order; mode++)
+   {
+      value += u(ModalIndex(cell, mode, order))*ModalBasis(xi, mode);
+   }
+   return value;
+}
+
+void AddScaled(Vector &y, real_t a, const Vector &x)
+{
+   for (int i = 0; i < y.Size(); i++) { y(i) += a*x(i); }
+}
+
+Vector LinearCombination(const vector<pair<real_t, const Vector*> > &terms)
+{
+   Vector y(terms[0].second->Size());
+   y = 0.0;
+   for (const auto &term : terms) { AddScaled(y, term.first, *term.second); }
+   return y;
+}
+
+Vector MatVecNew(const DenseMatrix &A, const Vector &x)
+{
+   Vector y(A.Height());
+   A.Mult(x, y);
+   return y;
+}
+
+DenseMatrix ScaleMatrix(const DenseMatrix &A, real_t scale)
+{
+   DenseMatrix B(A.Height(), A.Width());
+   for (int i = 0; i < A.Height(); i++)
+   {
+      for (int j = 0; j < A.Width(); j++) { B(i, j) = scale*A(i, j); }
+   }
+   return B;
+}
+
+DenseMatrix TransposeScale(const DenseMatrix &A, real_t scale)
+{
+   DenseMatrix B(A.Width(), A.Height());
+   for (int i = 0; i < A.Height(); i++)
+   {
+      for (int j = 0; j < A.Width(); j++) { B(j, i) = scale*A(i, j); }
+   }
+   return B;
+}
+
+DenseMatrix AddMatrices(const vector<pair<real_t, const DenseMatrix*> > &terms)
+{
+   DenseMatrix B(terms[0].second->Height(), terms[0].second->Width());
+   B = 0.0;
+   for (const auto &term : terms)
+   {
+      for (int i = 0; i < B.Height(); i++)
+      {
+         for (int j = 0; j < B.Width(); j++)
+         {
+            B(i, j) += term.first*(*term.second)(i, j);
+         }
+      }
+   }
+   return B;
+}
+
+DenseMatrix Multiply(const DenseMatrix &A, const DenseMatrix &B)
+{
+   DenseMatrix C(A.Height(), B.Width());
+   C = 0.0;
+   for (int i = 0; i < A.Height(); i++)
+   {
+      for (int k = 0; k < A.Width(); k++)
+      {
+         const real_t aik = A(i, k);
+         if (aik == 0.0) { continue; }
+         for (int j = 0; j < B.Width(); j++) { C(i, j) += aik*B(k, j); }
+      }
+   }
+   return C;
+}
+
+void AddBlock(DenseMatrix &A, int row_cell, int col_cell,
+              const DenseMatrix &block, int order)
+{
+   for (int i = 0; i <= order; i++)
+   {
+      for (int j = 0; j <= order; j++)
+      {
+         A(ModalIndex(row_cell, i, order), ModalIndex(col_cell, j, order))
+            += block(i, j);
+      }
+   }
+}
+
+MatrixStats ComputeMatrixStats(const DenseMatrix &A)
+{
+   MatrixStats stats;
+   stats.rows = A.Height();
+   stats.cols = A.Width();
+   vector<real_t> column_abs(stats.cols, 0.0), row_abs(stats.rows, 0.0);
+   real_t fro2 = 0.0;
+   for (int i = 0; i < stats.rows; i++)
+   {
+      for (int j = 0; j < stats.cols; j++)
+      {
+         const real_t value = A(i, j);
+         if (value != 0.0) { stats.nnz++; }
+         const real_t abs_value = std::abs(value);
+         fro2 += value*value;
+         stats.value_sum += value;
+         stats.abs_sum += abs_value;
+         stats.weighted_sum += (static_cast<real_t>(i + 1)
+                                + 0.125*static_cast<real_t>(j + 1))*value;
+         column_abs[j] += abs_value;
+         row_abs[i] += abs_value;
+      }
+   }
+   stats.fro_norm = std::sqrt(fro2);
+   stats.one_norm = *std::max_element(column_abs.begin(), column_abs.end());
+   stats.inf_norm = *std::max_element(row_abs.begin(), row_abs.end());
+   return stats;
+}
+
+VectorStats ComputeVectorStats(const Vector &x)
+{
+   VectorStats stats;
+   stats.size = x.Size();
+   stats.min = std::numeric_limits<real_t>::infinity();
+   stats.max = -std::numeric_limits<real_t>::infinity();
+   real_t norm2 = 0.0;
+   for (int i = 0; i < x.Size(); i++)
+   {
+      const real_t value = x(i);
+      stats.min = std::min(stats.min, value);
+      stats.max = std::max(stats.max, value);
+      stats.value_sum += value;
+      stats.abs_sum += std::abs(value);
+      stats.weighted_sum += static_cast<real_t>(i + 1)*value;
+      norm2 += value*value;
+   }
+   stats.mean = stats.value_sum/static_cast<real_t>(x.Size());
+   stats.norm2 = std::sqrt(norm2);
+   return stats;
+}
+
+DenseMatrix AssemblePNIPDGDiffusion(int elements, int order, real_t h)
+{
+   const int nloc = order + 1;
+   const int size = elements*nloc;
+   // The MATLAB PN params inherit alpha=16 from the default p=3 setup before
+   // switching the PN transport degree to p=2. Keep that historical value so
+   // this snapshot aligns with the legacy-derived MATLAB reference.
+   const real_t alpha = 16.0;
+   const real_t beta = 1.0;
+   const auto gauss = GaussLobatto(order);
+
+   DenseMatrix diffusion(size);
+   diffusion = 0.0;
+   DenseMatrix Mx1(nloc), Mx2LL(nloc), Mx2LR(nloc), Mx2RL(nloc), Mx2RR(nloc);
+   DenseMatrix Mx3LL(nloc), Mx3LR(nloc), Mx3RR(nloc), Mx3RL(nloc);
+   Mx1 = 0.0; Mx2LL = 0.0; Mx2LR = 0.0; Mx2RL = 0.0; Mx2RR = 0.0;
+   Mx3LL = 0.0; Mx3LR = 0.0; Mx3RR = 0.0; Mx3RL = 0.0;
+
+   for (int d1 = 0; d1 <= order; d1++)
+   {
+      for (int d2 = 0; d2 <= order; d2++)
+      {
+         for (const auto &g : gauss)
+         {
+            Mx1(d1, d2) += (1.0/h)*g.w*ModalBasisX(g.x, d2)
+                           *ModalBasisX(g.x, d1);
+         }
+         Mx2LL(d1, d2) = (1.0/h)*ModalBasisX(-0.5, d2)*ModalBasis(-0.5, d1);
+         Mx2RR(d1, d2) = (1.0/h)*ModalBasisX( 0.5, d2)*ModalBasis( 0.5, d1);
+         Mx2LR(d1, d2) = (1.0/h)*ModalBasisX(-0.5, d2)*ModalBasis( 0.5, d1);
+         Mx2RL(d1, d2) = (1.0/h)*ModalBasisX( 0.5, d2)*ModalBasis(-0.5, d1);
+         Mx3LL(d1, d2) = ModalBasis(-0.5, d2)*ModalBasis(-0.5, d1);
+         Mx3RR(d1, d2) = ModalBasis( 0.5, d2)*ModalBasis( 0.5, d1);
+         Mx3RL(d1, d2) = ModalBasis( 0.5, d2)*ModalBasis(-0.5, d1);
+         Mx3LR(d1, d2) = ModalBasis(-0.5, d2)*ModalBasis( 0.5, d1);
+      }
+   }
+
+   Mx2LL = ScaleMatrix(Mx2LL, 0.5);
+   Mx2RR = ScaleMatrix(Mx2RR, 0.5);
+   Mx2LR = ScaleMatrix(Mx2LR, 0.5);
+   Mx2RL = ScaleMatrix(Mx2RL, 0.5);
+   Mx3LL = ScaleMatrix(Mx3LL, alpha/h);
+   Mx3RR = ScaleMatrix(Mx3RR, alpha/h);
+   Mx3LR = ScaleMatrix(Mx3LR, alpha/h);
+   Mx3RL = ScaleMatrix(Mx3RL, alpha/h);
+
+   DenseMatrix diag = AddMatrices({{-1.0, &Mx1}, {1.0, &Mx2RR},
+                                   {-1.0, &Mx2LL}});
+   DenseMatrix t1 = TransposeScale(Mx2RR, beta);
+   DenseMatrix t2 = TransposeScale(Mx2LL, -beta);
+   DenseMatrix diag2 = AddMatrices({{1.0, &diag}, {1.0, &t1}, {1.0, &t2},
+                                    {-1.0, &Mx3RR}, {-1.0, &Mx3LL}});
+   DenseMatrix upper_t = TransposeScale(Mx2RL, -beta);
+   DenseMatrix upper = AddMatrices({{1.0, &Mx2LR}, {1.0, &upper_t},
+                                    {1.0, &Mx3LR}});
+   DenseMatrix lower_t = TransposeScale(Mx2LR, beta);
+   DenseMatrix lower = AddMatrices({{-1.0, &Mx2RL}, {1.0, &lower_t},
+                                    {1.0, &Mx3RL}});
+
+   for (int cell = 0; cell < elements; cell++)
+   {
+      AddBlock(diffusion, cell, cell, diag2, order);
+      if (cell < elements - 1) { AddBlock(diffusion, cell, cell + 1, upper, order); }
+      else { AddBlock(diffusion, 0, cell, lower, order); }
+
+      if (cell > 0) { AddBlock(diffusion, cell, cell - 1, lower, order); }
+      else { AddBlock(diffusion, elements - 1, cell, upper, order); }
+   }
+
+   for (int i = 0; i < size; i++)
+   {
+      for (int j = 0; j < size; j++) { diffusion(i, j) *= kPNDiffusion; }
+   }
+   return diffusion;
+}
+
+void AssemblePNLDG(int elements, int order, real_t h,
+                   const vector<real_t> &inv_mass,
+                   DenseMatrix &M1, DenseMatrix &M2, DenseMatrix &Mn)
+{
+   const int nloc = order + 1;
+   const int size = elements*nloc;
+   const real_t Cp = static_cast<real_t>(order)/h;
+   const auto gauss = GaussLobatto(order);
+   M1.SetSize(size);
+   M2.SetSize(size);
+   DenseMatrix M3(size);
+   M1 = 0.0; M2 = 0.0; M3 = 0.0;
+
+   auto quad = [&](int beta, int alpha)
+   {
+      real_t s = 0.0;
+      for (const auto &g : gauss)
+      {
+         s += g.w*ModalBasis(g.x, beta)*ModalBasisX(g.x, alpha);
+      }
+      return s;
+   };
+
+   for (int cell = 0; cell < elements; cell++)
+   {
+      for (int alpha = 0; alpha <= order; alpha++)
+      {
+         for (int beta = 0; beta <= order; beta++)
+         {
+            const int row = ModalIndex(cell, alpha, order);
+            const int col = ModalIndex(cell, beta, order);
+            if (cell == 0)
+            {
+               M1(row, col) = inv_mass[alpha]/h
+                              *(-quad(beta, alpha)
+                                + ModalBasis(0.5, beta)*ModalBasis(0.5, alpha));
+            }
+            else if (cell < elements - 1)
+            {
+               M1(row, col) = inv_mass[alpha]/h
+                              *(-quad(beta, alpha)
+                                + ModalBasis(0.5, beta)*ModalBasis(0.5, alpha));
+               M1(row, ModalIndex(cell - 1, beta, order)) =
+                  inv_mass[alpha]/h*(-ModalBasis(0.5, beta)
+                                      *ModalBasis(-0.5, alpha));
+            }
+            else
+            {
+               M1(row, col) = inv_mass[alpha]/h*(-quad(beta, alpha));
+               M1(row, ModalIndex(cell - 1, beta, order)) =
+                  inv_mass[alpha]/h*(-ModalBasis(0.5, beta)
+                                      *ModalBasis(-0.5, alpha));
+            }
+         }
+      }
+   }
+
+   for (int cell = 0; cell < elements; cell++)
+   {
+      for (int alpha = 0; alpha <= order; alpha++)
+      {
+         for (int beta = 0; beta <= order; beta++)
+         {
+            const int row = ModalIndex(cell, alpha, order);
+            const int col = ModalIndex(cell, beta, order);
+            if (cell < elements - 1)
+            {
+               M2(row, col) = -quad(beta, alpha)
+                              - ModalBasis(-0.5, beta)*ModalBasis(-0.5, alpha);
+               M2(row, ModalIndex(cell + 1, beta, order)) =
+                  ModalBasis(-0.5, beta)*ModalBasis(0.5, alpha);
+            }
+            else
+            {
+               M2(row, col) = -quad(beta, alpha)
+                              - ModalBasis(-0.5, beta)*ModalBasis(-0.5, alpha)
+                              + ModalBasis(0.5, beta)*ModalBasis(0.5, alpha);
+               M3(row, col) = -Cp*ModalBasis(0.5, beta)*ModalBasis(0.5, alpha);
+            }
+         }
+      }
+   }
+
+   Mn = Multiply(M2, M1);
+   for (int i = 0; i < size; i++)
+   {
+      for (int j = 0; j < size; j++) { Mn(i, j) += M3(i, j); }
+   }
+}
+
+Vector PNL2Projection(int elements, int order, real_t h,
+                      const vector<real_t> &inv_mass)
+{
+   Vector coeff(elements*(order + 1));
+   coeff = 0.0;
+   const auto gauss = GaussLegendre4();
+   for (int cell = 0; cell < elements; cell++)
+   {
+      const real_t center = kPNLeft + h*(static_cast<real_t>(cell) + 0.5);
+      for (int mode = 0; mode <= order; mode++)
+      {
+         real_t s = 0.0;
+         for (const auto &g : gauss)
+         {
+            s += g.w*PNDopingProfile(g.x*h + center)*ModalBasis(g.x, mode);
+         }
+         coeff(ModalIndex(cell, mode, order)) = inv_mass[mode]*s;
+      }
+   }
+   return coeff;
+}
+
+void PNSolveLDG(int elements, int order, real_t h,
+                const vector<real_t> &inv_mass, const Vector &carrier_coeff,
+                const DenseMatrix &M1, const DenseMatrix &M2,
+                const DenseMatrixInverse &poisson_solver,
+                Vector &phi_coeff, Vector &e_coeff)
+{
+   const int size = elements*(order + 1);
+   const real_t Cp = static_cast<real_t>(order)/h;
+   const auto gauss = GaussLobatto(order);
+
+   Vector b1(size), b2(size), f_terms(size), tmp(size), rhs(size);
+   b1 = 0.0; b2 = 0.0; f_terms = 0.0;
+
+   const real_t left_bound = PNPhiLeft();
+   const real_t right_bound = PNPhiRight();
+   for (int alpha = 0; alpha <= order; alpha++)
+   {
+      b1(ModalIndex(0, alpha, order)) =
+         -inv_mass[alpha]/h*left_bound*ModalBasis(-0.5, alpha);
+      b1(ModalIndex(elements - 1, alpha, order)) =
+         inv_mass[alpha]/h*right_bound*ModalBasis(0.5, alpha);
+      b2(ModalIndex(elements - 1, alpha, order)) =
+         Cp*right_bound*ModalBasis(0.5, alpha);
+   }
+
+   for (int cell = 0; cell < elements; cell++)
+   {
+      const real_t center = kPNLeft + h*(static_cast<real_t>(cell) + 0.5);
+      for (int alpha = 0; alpha <= order; alpha++)
+      {
+         real_t s = 0.0;
+         for (const auto &g : gauss)
+         {
+            const real_t x = g.x*h + center;
+            const real_t rhs_value = EvalModal(carrier_coeff, cell, order, g.x)
+                                     - PNDopingProfile(x);
+            s += g.w*rhs_value*ModalBasis(g.x, alpha);
+         }
+         f_terms(ModalIndex(cell, alpha, order)) = kPNPoissonScale*s*h;
+      }
+   }
+
+   M2.Mult(b1, tmp);
+   rhs = f_terms;
+   AddScaled(rhs, -1.0, tmp);
+   AddScaled(rhs, -1.0, b2);
+
+   phi_coeff.SetSize(size);
+   e_coeff.SetSize(size);
+   poisson_solver.Mult(rhs, phi_coeff);
+   M1.Mult(phi_coeff, e_coeff);
+   AddScaled(e_coeff, 1.0, b1);
+}
+
+Vector PNTransportRHS(int elements, int order, const Vector &carrier_coeff,
+                      const Vector &e_coeff)
+{
+   const int nloc = order + 1;
+   const int size = elements*nloc;
+   const auto gauss = GaussLobatto(order);
+   const int gcount = static_cast<int>(gauss.size());
+   vector<vector<real_t> > carrier_values(gcount, vector<real_t>(elements, 0.0));
+   vector<vector<real_t> > field_values(gcount, vector<real_t>(elements, 0.0));
+   vector<vector<real_t> > flux_values(gcount, vector<real_t>(elements, 0.0));
+   vector<real_t> carrier_left(elements), carrier_right(elements);
+   vector<real_t> field_left(elements), field_right(elements);
+   vector<real_t> flux_left(elements), flux_right(elements);
+   vector<real_t> right_term(elements, 0.0), left_term(elements, 0.0);
+
+   for (int cell = 0; cell < elements; cell++)
+   {
+      carrier_left[cell] = EvalModal(carrier_coeff, cell, order, -0.5);
+      carrier_right[cell] = EvalModal(carrier_coeff, cell, order, 0.5);
+      field_left[cell] = EvalModal(e_coeff, cell, order, -0.5);
+      field_right[cell] = EvalModal(e_coeff, cell, order, 0.5);
+      flux_left[cell] = -(carrier_left[cell]*field_left[cell]);
+      flux_right[cell] = -(carrier_right[cell]*field_right[cell]);
+      for (int gi = 0; gi < gcount; gi++)
+      {
+         carrier_values[gi][cell] = EvalModal(carrier_coeff, cell, order, gauss[gi].x);
+         field_values[gi][cell] = EvalModal(e_coeff, cell, order, gauss[gi].x);
+         flux_values[gi][cell] = -(carrier_values[gi][cell]*field_values[gi][cell]);
+      }
+   }
+
+   for (int cell = 0; cell < elements - 1; cell++)
+   {
+      right_term[cell] = 0.5*(flux_right[cell] + flux_left[cell + 1])
+                         - 0.5*kPNMobility*(carrier_left[cell + 1]
+                                             - carrier_right[cell]);
+      left_term[cell + 1] = -0.5*(flux_right[cell] + flux_left[cell + 1])
+                            + 0.5*kPNMobility*(carrier_left[cell + 1]
+                                                - carrier_right[cell]);
+   }
+
+   const real_t flux_bc_left = -(kPNContactDensityLeft*field_left[0]);
+   left_term[0] = -0.5*(flux_bc_left + flux_left[0])
+                  + 0.5*kPNMobility*(kPNContactDensityLeft - carrier_left[0]);
+   const real_t flux_bc_right = -(kPNContactDensityRight*field_right[elements - 1]);
+   right_term[elements - 1] =
+      0.5*(flux_right[elements - 1] + flux_bc_right)
+      - 0.5*kPNMobility*(kPNContactDensityRight - carrier_right[elements - 1]);
+
+   Vector rhs(size);
+   rhs = 0.0;
+   for (int cell = 0; cell < elements; cell++)
+   {
+      for (int mode = 0; mode <= order; mode++)
+      {
+         real_t volume = 0.0;
+         for (int gi = 0; gi < gcount; gi++)
+         {
+            volume += gauss[gi].w*flux_values[gi][cell]
+                      *ModalBasisX(gauss[gi].x, mode);
+         }
+         volume = -volume;
+         const real_t iface = ModalBasis(0.5, mode)*right_term[cell]
+                              + ModalBasis(-0.5, mode)*left_term[cell];
+         rhs(ModalIndex(cell, mode, order)) = kPNMobility*(volume + iface);
+      }
+   }
+   return rhs;
+}
+
+DenseMatrix PNMakeImplicitMatrix(const DenseMatrix &diffusion, int elements,
+                                 int order, real_t h,
+                                 const vector<real_t> &inv_mass, real_t dt)
+{
+   const int size = elements*(order + 1);
+   DenseMatrix A(size);
+   A = 0.0;
+   for (int i = 0; i < size; i++)
+   {
+      for (int j = 0; j < size; j++) { A(i, j) = -0.5*diffusion(i, j); }
+   }
+   for (int cell = 0; cell < elements; cell++)
+   {
+      for (int mode = 0; mode <= order; mode++)
+      {
+         const int id = ModalIndex(cell, mode, order);
+         A(id, id) += h/inv_mass[mode]/dt;
+      }
+   }
+   return A;
+}
+
+Vector PNMassOverDtMult(const Vector &x, int elements, int order, real_t h,
+                        const vector<real_t> &inv_mass, real_t dt)
+{
+   Vector y(x.Size());
+   y = 0.0;
+   for (int cell = 0; cell < elements; cell++)
+   {
+      for (int mode = 0; mode <= order; mode++)
+      {
+         const int id = ModalIndex(cell, mode, order);
+         y(id) = h/inv_mass[mode]/dt*x(id);
+      }
+   }
+   return y;
+}
+
+PNCurrentSummary PNComputeCurrent(int elements, int order, real_t h,
+                                  const Vector &n_coeff, const Vector &e_coeff)
+{
+   const auto gauss = GaussLobatto(order);
+   PNCurrentSummary summary;
+   for (int cell = 0; cell < elements; cell++)
+   {
+      real_t cell_sum = 0.0;
+      for (const auto &g : gauss)
+      {
+         real_t n_value = 0.0, e_value = 0.0, nx_value = 0.0;
+         for (int mode = 0; mode <= order; mode++)
+         {
+            const int id = ModalIndex(cell, mode, order);
+            n_value += n_coeff(id)*ModalBasis(g.x, mode);
+            e_value += e_coeff(id)*ModalBasis(g.x, mode);
+            nx_value += n_coeff(id)*ModalBasisX(g.x, mode)/h;
+         }
+         cell_sum += -kPNDiffusion*nx_value + kPNMobility*n_value*e_value;
+      }
+      summary.domain_average += cell_sum/static_cast<real_t>(gauss.size());
+   }
+   summary.domain_average /= static_cast<real_t>(elements);
+
+   auto contact = [&](int cell, real_t xi)
+   {
+      real_t n_value = 0.0, e_value = 0.0, nx_value = 0.0;
+      for (int mode = 0; mode <= order; mode++)
+      {
+         const int id = ModalIndex(cell, mode, order);
+         n_value += n_coeff(id)*ModalBasis(xi, mode);
+         e_value += e_coeff(id)*ModalBasis(xi, mode);
+         nx_value += n_coeff(id)*ModalBasisX(xi, mode)/h;
+      }
+      return -kPNDiffusion*nx_value + kPNMobility*n_value*e_value;
+   };
+
+   summary.left_contact = contact(0, -0.5);
+   summary.right_contact = contact(elements - 1, 0.5);
+   return summary;
+}
+
+void WritePNOperatorMetrics(int elements, int order, real_t h, real_t dt,
+                            const MatrixStats &diffusion,
+                            const MatrixStats &poisson_main,
+                            const MatrixStats &poisson_aux,
+                            const MatrixStats &poisson_rhs,
+                            const MatrixStats &implicit_stats,
+                            const VectorStats &mass_diag,
+                            const VectorStats &n0,
+                            const VectorStats &phi0,
+                            const VectorStats &e0,
+                            const VectorStats &rhs0,
+                            const VectorStats &n1,
+                            const VectorStats &rhs1,
+                            const VectorStats &n2,
+                            const VectorStats &rhs2,
+                            const VectorStats &n3,
+                            const VectorStats &rhs3,
+                            const VectorStats &n_step,
+                            const VectorStats &phi_step,
+                            const VectorStats &e_step,
+                            const PNCurrentSummary &current0,
+                            const PNCurrentSummary &current_step)
+{
+   ofstream out("metrics.csv");
+   out << setprecision(16);
+   out << "case_name,elements,dimension,order,dofs,h_max,backend,total_dofs,dt,"
+          "diffusion_fro_norm,poisson_main_fro_norm,poisson_aux_fro_norm,"
+          "poisson_rhs_fro_norm,implicit_fro_norm,mass_diag_norm2,n0_norm2,"
+          "phi0_norm2,E0_norm2,rhs0_norm2,n1_norm2,rhs1_norm2,n2_norm2,"
+          "rhs2_norm2,n3_norm2,rhs3_norm2,n_step_norm2,phi_step_norm2,"
+          "E_step_norm2,initial_right_contact,initial_left_contact,"
+          "initial_domain_average,step_right_contact,step_left_contact,"
+          "step_domain_average,status\n";
+   const int size = elements*(order + 1);
+   out << "dd_pn_device," << elements << ",1," << order << "," << size << ","
+       << h << ",native_operator_snapshot," << size << "," << dt << ","
+       << diffusion.fro_norm << "," << poisson_main.fro_norm << ","
+       << poisson_aux.fro_norm << "," << poisson_rhs.fro_norm << ","
+       << implicit_stats.fro_norm << "," << mass_diag.norm2 << ","
+       << n0.norm2 << "," << phi0.norm2 << "," << e0.norm2 << ","
+       << rhs0.norm2 << "," << n1.norm2 << "," << rhs1.norm2 << ","
+       << n2.norm2 << "," << rhs2.norm2 << "," << n3.norm2 << ","
+       << rhs3.norm2 << "," << n_step.norm2 << "," << phi_step.norm2 << ","
+       << e_step.norm2 << "," << current0.right_contact << ","
+       << current0.left_contact << "," << current0.domain_average << ","
+       << current_step.right_contact << "," << current_step.left_contact << ","
+       << current_step.domain_average << ",native_cpp_pn_operator_snapshot\n";
+}
+
+int RunNativePNOperatorSnapshot(int elements, int order)
+{
+   if (elements <= 0) { elements = 160; }
+   if (order <= 0) { order = 2; }
+   if (order != 2)
+   {
+      cerr << "Native PN operator snapshot targets the p=2 MATLAB reference. "
+           << "Use -o 2." << endl;
+      return 2;
+   }
+
+   const real_t h = (kPNRight - kPNLeft)/static_cast<real_t>(elements);
+   const real_t dt = 0.5*h;
+   const int size = elements*(order + 1);
+   const vector<real_t> inv_mass = PNInverseMass(order);
+
+   Mesh mesh = Mesh::MakeCartesian1D(elements, kPNRight - kPNLeft);
+   L2_FECollection fec(order, mesh.Dimension());
+   FiniteElementSpace fes(&mesh, &fec);
+   (void)fes;
+
+   Vector n0 = PNL2Projection(elements, order, h, inv_mass);
+   DenseMatrix diffusion = AssemblePNIPDGDiffusion(elements, order, h);
+   DenseMatrix M1, M2, Mn;
+   AssemblePNLDG(elements, order, h, inv_mass, M1, M2, Mn);
+   DenseMatrixInverse poisson_solver(Mn);
+   DenseMatrix implicit_matrix =
+      PNMakeImplicitMatrix(diffusion, elements, order, h, inv_mass, dt);
+   DenseMatrixInverse implicit_solver(implicit_matrix);
+
+   Vector mass_diag(size);
+   mass_diag = 0.0;
+   for (int cell = 0; cell < elements; cell++)
+   {
+      for (int mode = 0; mode <= order; mode++)
+      {
+         mass_diag(ModalIndex(cell, mode, order)) = h/inv_mass[mode];
+      }
+   }
+
+   Vector phi0(size), e0(size), rhs0(size), rhs1(size), rhs2(size), rhs3(size);
+   Vector n1(size), n2(size), n3(size), n_step(size);
+   PNSolveLDG(elements, order, h, inv_mass, n0, M1, M2, poisson_solver, phi0, e0);
+   rhs0 = PNTransportRHS(elements, order, n0, e0);
+   PNCurrentSummary current0 = PNComputeCurrent(elements, order, h, n0, e0);
+
+   Vector mass_term = PNMassOverDtMult(n0, elements, order, h, inv_mass, dt);
+   Vector solve_rhs = LinearCombination({{0.5, &rhs0}, {1.0, &mass_term}});
+   implicit_solver.Mult(solve_rhs, n1);
+
+   Vector phi1(size), e1(size);
+   PNSolveLDG(elements, order, h, inv_mass, n1, M1, M2, poisson_solver, phi1, e1);
+   rhs1 = PNTransportRHS(elements, order, n1, e1);
+   Vector d_n1 = MatVecNew(diffusion, n1);
+   solve_rhs = LinearCombination({{11.0/18.0, &rhs0}, {1.0/18.0, &rhs1},
+                                  {1.0/6.0, &d_n1}, {1.0, &mass_term}});
+   implicit_solver.Mult(solve_rhs, n2);
+
+   Vector phi2(size), e2(size);
+   PNSolveLDG(elements, order, h, inv_mass, n2, M1, M2, poisson_solver, phi2, e2);
+   rhs2 = PNTransportRHS(elements, order, n2, e2);
+   Vector d_n2 = MatVecNew(diffusion, n2);
+   solve_rhs = LinearCombination({{5.0/6.0, &rhs0}, {-5.0/6.0, &rhs1},
+                                  {0.5, &rhs2}, {-0.5, &d_n1},
+                                  {0.5, &d_n2}, {1.0, &mass_term}});
+   implicit_solver.Mult(solve_rhs, n3);
+
+   Vector phi3(size), e3(size);
+   PNSolveLDG(elements, order, h, inv_mass, n3, M1, M2, poisson_solver, phi3, e3);
+   rhs3 = PNTransportRHS(elements, order, n3, e3);
+   Vector d_n3 = MatVecNew(diffusion, n3);
+   solve_rhs = LinearCombination({{0.25, &rhs0}, {1.75, &rhs1},
+                                  {0.75, &rhs2}, {-1.75, &rhs3},
+                                  {1.5, &d_n1}, {-1.5, &d_n2},
+                                  {0.5, &d_n3}, {1.0, &mass_term}});
+   implicit_solver.Mult(solve_rhs, n_step);
+
+   Vector phi_step(size), e_step(size);
+   PNSolveLDG(elements, order, h, inv_mass, n_step, M1, M2, poisson_solver,
+              phi_step, e_step);
+   PNCurrentSummary current_step =
+      PNComputeCurrent(elements, order, h, n_step, e_step);
+
+   WritePNOperatorMetrics(elements, order, h, dt,
+                          ComputeMatrixStats(diffusion),
+                          ComputeMatrixStats(M1),
+                          ComputeMatrixStats(M2),
+                          ComputeMatrixStats(Mn),
+                          ComputeMatrixStats(implicit_matrix),
+                          ComputeVectorStats(mass_diag),
+                          ComputeVectorStats(n0),
+                          ComputeVectorStats(phi0),
+                          ComputeVectorStats(e0),
+                          ComputeVectorStats(rhs0),
+                          ComputeVectorStats(n1),
+                          ComputeVectorStats(rhs1),
+                          ComputeVectorStats(n2),
+                          ComputeVectorStats(rhs2),
+                          ComputeVectorStats(n3),
+                          ComputeVectorStats(rhs3),
+                          ComputeVectorStats(n_step),
+                          ComputeVectorStats(phi_step),
+                          ComputeVectorStats(e_step),
+                          current0, current_step);
+
+   cout << "case=dd_pn_device"
+        << " backend=native_operator_snapshot"
+        << " total_dofs=" << size
+        << " n0_norm2=" << ComputeVectorStats(n0).norm2
+        << " rhs0_norm2=" << ComputeVectorStats(rhs0).norm2
+        << " n_step_norm2=" << ComputeVectorStats(n_step).norm2
+        << " step_right_contact=" << current_step.right_contact << endl;
+   return 0;
+}
 
 void WriteMetrics(int elements, int order, int dim, int dofs, real_t h,
                   const string &backend, real_t charge_proxy,
@@ -252,7 +1119,7 @@ int main(int argc, char *argv[])
    args.AddOption(&dim, "-d", "--dimension", "Mesh dimension: 1 or 2.");
    args.AddOption(&backend, "-b", "--backend",
                   "Backend: mfem_projection, legacy_baseline, matlab_mfem, "
-                  "or native_mfem.");
+                  "native_operator_snapshot, or native_mfem.");
    args.AddOption(&precision, "-p", "--precision", "Output precision.");
    args.Parse();
    if (!args.Good())
@@ -282,6 +1149,12 @@ int main(int argc, char *argv[])
        || backend == "matlab_native_bridge")
    {
       return RunMatlabDeviceBridge(elements, order);
+   }
+
+   if (backend == "native_operator_snapshot"
+       || backend == "native_cpp_operator_snapshot")
+   {
+      return RunNativePNOperatorSnapshot(elements, order);
    }
 
    if (backend == "native_mfem" || backend == "native_cpp_mfem")

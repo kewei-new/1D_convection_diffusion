@@ -215,6 +215,7 @@ $cppNativeSummary = $null
 $cppDeviceSummary = $null
 $cppDeviceBridgeSummary = $null
 $cppDeviceNativeSummary = $null
+$cppDeviceOperatorSummary = $null
 if (-not $SkipCpp) {
     if (-not (Test-Path (Join-Path $BuildDir "CMakeCache.txt"))) {
         throw "C++ build directory is missing or unconfigured: $BuildDir"
@@ -457,6 +458,70 @@ if (-not $SkipCpp) {
             checked_summary_fields = $deviceExpectedSummary.Count
             status = "passed"
         }
+
+        $cppDeviceOperatorRunDir = Join-Path $artifactDir "cpp_device_native_operator_snapshot"
+        New-Item -ItemType Directory -Force -Path $cppDeviceOperatorRunDir | Out-Null
+        Push-Location $cppDeviceOperatorRunDir
+        try {
+            Invoke-Checked { & $deviceExe -n 160 -o 2 -b native_operator_snapshot } "C++ native PN operator snapshot app"
+        } finally {
+            Pop-Location
+        }
+
+        $cppDeviceOperatorCsv = Join-Path $cppDeviceOperatorRunDir "metrics.csv"
+        $cppDeviceOperatorRows = Import-Csv $cppDeviceOperatorCsv
+        if ($cppDeviceOperatorRows[0].status -ne "native_cpp_pn_operator_snapshot") {
+            throw "C++ native PN operator snapshot status mismatch: got $($cppDeviceOperatorRows[0].status)"
+        }
+        $cppPNOperatorExpected = [ordered]@{
+            total_dofs = [double]$pnOperatorSnapshot.space.total_dofs
+            diffusion_fro_norm = [double]$pnOperatorSnapshot.operators.diffusion.fro_norm
+            poisson_rhs_fro_norm = [double]$pnOperatorSnapshot.operators.poisson_rhs.fro_norm
+            implicit_fro_norm = [double]$pnOperatorSnapshot.operators.implicit.fro_norm
+            n0_norm2 = [double]$pnOperatorSnapshot.vectors.n0.norm2
+            phi0_norm2 = [double]$pnOperatorSnapshot.vectors.phi0.norm2
+            E0_norm2 = [double]$pnOperatorSnapshot.vectors.E0.norm2
+            rhs0_norm2 = [double]$pnOperatorSnapshot.vectors.rhs0.norm2
+            n1_norm2 = [double]$pnOperatorSnapshot.vectors.n1.norm2
+            rhs1_norm2 = [double]$pnOperatorSnapshot.vectors.rhs1.norm2
+            n2_norm2 = [double]$pnOperatorSnapshot.vectors.n2.norm2
+            rhs2_norm2 = [double]$pnOperatorSnapshot.vectors.rhs2.norm2
+            n3_norm2 = [double]$pnOperatorSnapshot.vectors.n3.norm2
+            rhs3_norm2 = [double]$pnOperatorSnapshot.vectors.rhs3.norm2
+            n_step_norm2 = [double]$pnOperatorSnapshot.vectors.n_step.norm2
+            phi_step_norm2 = [double]$pnOperatorSnapshot.vectors.phi_step.norm2
+            E_step_norm2 = [double]$pnOperatorSnapshot.vectors.E_step.norm2
+            initial_right_contact = [double]$pnOperatorSnapshot.current.initial_right_contact
+            step_right_contact = [double]$pnOperatorSnapshot.current.step_right_contact
+        }
+        $cppPNOperatorMaxAbs = 0.0
+        foreach ($field in $cppPNOperatorExpected.Keys) {
+            $property = $cppDeviceOperatorRows[0].PSObject.Properties[$field]
+            if ($null -eq $property) {
+                throw "C++ native PN operator snapshot missing field $field"
+            }
+            $observedValue = [double]$property.Value
+            $expectedValue = [double]$cppPNOperatorExpected[$field]
+            $absDiff = [Math]::Abs($observedValue - $expectedValue)
+            $cppPNOperatorMaxAbs = [Math]::Max($cppPNOperatorMaxAbs, $absDiff)
+            if ($absDiff -gt 1.0e-5) {
+                throw "C++ native PN operator snapshot $field mismatch: got $observedValue expected $expectedValue abs_diff=$absDiff tolerance=1e-5"
+            }
+        }
+        $cppDeviceOperatorSummary = [ordered]@{
+            app = "dd_device"
+            backend = "native_operator_snapshot"
+            metrics_csv = $cppDeviceOperatorCsv
+            total_dofs = [int]$cppDeviceOperatorRows[0].total_dofs
+            diffusion_fro_norm = [double]$cppDeviceOperatorRows[0].diffusion_fro_norm
+            rhs0_norm2 = [double]$cppDeviceOperatorRows[0].rhs0_norm2
+            n_step_norm2 = [double]$cppDeviceOperatorRows[0].n_step_norm2
+            step_right_contact = [double]$cppDeviceOperatorRows[0].step_right_contact
+            checked_summary_fields = $cppPNOperatorExpected.Count
+            max_abs_diff_vs_matlab_operator_snapshot = $cppPNOperatorMaxAbs
+            abs_tolerance = 1.0e-5
+            status = "passed"
+        }
     }
 }
 
@@ -477,6 +542,7 @@ $summary = [ordered]@{
     cpp_device_legacy_baseline = $cppDeviceSummary
     cpp_device_matlab_bridge = $cppDeviceBridgeSummary
     cpp_device_native_mfem = $cppDeviceNativeSummary
+    cpp_device_native_operator_snapshot = $cppDeviceOperatorSummary
     status = "passed"
 }
 

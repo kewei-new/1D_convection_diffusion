@@ -95,9 +95,19 @@ if ($repoName -like "1D_convection_diffusion") {
         ((Test-Passed $summary.cpp_device_native_mfem) -and `
             $summary.cpp_device_native_mfem.checked_summary_fields -eq 12) `
         "C++ native_mfem device path emits all compact PN IV/CV/transient summary metrics without invoking MATLAB."
+    $checks += New-Check "dd_pn_device" "C++ native PDE operator snapshot" `
+        "native_cpp_pn_operator_snapshot" $summary.cpp_device_native_operator_snapshot.metrics_csv `
+        ((Test-Passed $summary.cpp_device_native_operator_snapshot) -and `
+            $summary.cpp_device_native_operator_snapshot.total_dofs -eq 480 -and `
+            $summary.cpp_device_native_operator_snapshot.checked_summary_fields -ge 19 -and `
+            $summary.cpp_device_native_operator_snapshot.n_step_norm2 -gt 0 -and `
+            $summary.cpp_device_native_operator_snapshot.step_right_contact -gt 0 -and `
+            $summary.cpp_device_native_operator_snapshot.max_abs_diff_vs_matlab_operator_snapshot -le `
+                $summary.cpp_device_native_operator_snapshot.abs_tolerance) `
+        "C++ native PN device assembles the PDE operator and one IMEX step, then matches the MATLAB-native operator snapshot without invoking MATLAB."
 
     $gaps += New-Gap "dd_pn_device" "C++ native physical solve" `
-        "The C++ device path has native compact table evidence and a MATLAB PDE operator/step reference, but no PDE-level native PN device solver is implemented."
+        "The C++ device path has native compact table evidence and a native C++ PDE operator/one-step snapshot, but no full native PN IV/CV/transient PDE solve is implemented."
     $gaps += New-Gap "legacy cleanup" "old directory deletion" `
         "No legacy directory is eligible for deletion until each target has legacy, MATLAB-native, and C++ evidence."
 } elseif ($repoName -like "2D_convection_diffusion") {
