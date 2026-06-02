@@ -265,6 +265,7 @@ $cppDeviceSummary = $null
 $cppDeviceBridgeSummary = $null
 $cppDeviceNativeSummary = $null
 $cppDeviceNativeTablesSummary = $null
+$cppDeviceNativeSolveSummary = $null
 $cppDeviceOperatorSummary = $null
 if (-not $SkipCpp) {
     if (-not (Test-Path (Join-Path $BuildDir "CMakeCache.txt"))) {
@@ -559,6 +560,54 @@ if (-not $SkipCpp) {
             status = "passed"
         }
 
+        $cppDeviceNativeSolveRunDir = Join-Path $artifactDir "cpp_device_native_solve"
+        New-Item -ItemType Directory -Force -Path $cppDeviceNativeSolveRunDir | Out-Null
+        Push-Location $cppDeviceNativeSolveRunDir
+        try {
+            Invoke-Checked { & $deviceExe -n 160 -o 2 -b native_solve } "C++ native PN device PDE solve app"
+        } finally {
+            Pop-Location
+        }
+
+        $cppDeviceNativeSolveCsv = Join-Path $cppDeviceNativeSolveRunDir "metrics.csv"
+        $cppDeviceNativeSolveRows = Import-Csv $cppDeviceNativeSolveCsv
+        if ($cppDeviceNativeSolveRows[0].status -ne "native_cpp_device_solve") {
+            throw "C++ native PN device solve status mismatch: got $($cppDeviceNativeSolveRows[0].status)"
+        }
+        Assert-CsvFieldsClose $cppDeviceNativeSolveRows[0] $deviceExpectedSummary 1.0e-12 `
+            "C++ native PN device PDE solve summary"
+        $ivSolveReport = Compare-NumericCsvTable `
+            -ExpectedPath (Join-Path $legacyDeviceRoot "iv_curve.csv") `
+            -ObservedPath (Join-Path $cppDeviceNativeSolveRunDir "iv_curve.csv") `
+            -Label "C++ native PN PDE-solve IV table" `
+            -Tolerance 1.0e-12
+        $cvSolveReport = Compare-NumericCsvTable `
+            -ExpectedPath (Join-Path $legacyDeviceRoot "cv_curve.csv") `
+            -ObservedPath (Join-Path $cppDeviceNativeSolveRunDir "cv_curve.csv") `
+            -Label "C++ native PN PDE-solve CV table" `
+            -Tolerance 1.0e-12
+        $transientSolveReport = Compare-NumericCsvTable `
+            -ExpectedPath (Join-Path $legacyDeviceRoot "transient_current.csv") `
+            -ObservedPath (Join-Path $cppDeviceNativeSolveRunDir "transient_current.csv") `
+            -Label "C++ native PN PDE-solve transient table" `
+            -Tolerance 1.0e-12
+        $cppDeviceNativeSolveSummary = [ordered]@{
+            app = "dd_device"
+            backend = "native_solve"
+            metrics_csv = $cppDeviceNativeSolveCsv
+            iv_csv = (Join-Path $cppDeviceNativeSolveRunDir "iv_curve.csv")
+            cv_csv = (Join-Path $cppDeviceNativeSolveRunDir "cv_curve.csv")
+            transient_csv = (Join-Path $cppDeviceNativeSolveRunDir "transient_current.csv")
+            iv_rows = [int]$ivSolveReport.rows
+            cv_rows = [int]$cvSolveReport.rows
+            transient_rows = [int]$transientSolveReport.rows
+            max_abs_diff_vs_legacy = [Math]::Max($ivSolveReport.max_abs_diff, [Math]::Max($cvSolveReport.max_abs_diff, $transientSolveReport.max_abs_diff))
+            max_rel_diff_vs_legacy = [Math]::Max($ivSolveReport.max_rel_diff, [Math]::Max($cvSolveReport.max_rel_diff, $transientSolveReport.max_rel_diff))
+            abs_tolerance = 1.0e-12
+            checked_summary_fields = $deviceExpectedSummary.Count
+            status = "passed"
+        }
+
         $cppDeviceOperatorRunDir = Join-Path $artifactDir "cpp_device_native_operator_snapshot"
         New-Item -ItemType Directory -Force -Path $cppDeviceOperatorRunDir | Out-Null
         Push-Location $cppDeviceOperatorRunDir
@@ -643,6 +692,7 @@ $summary = [ordered]@{
     cpp_device_matlab_bridge = $cppDeviceBridgeSummary
     cpp_device_native_mfem = $cppDeviceNativeSummary
     cpp_device_native_tables = $cppDeviceNativeTablesSummary
+    cpp_device_native_solve = $cppDeviceNativeSolveSummary
     cpp_device_native_operator_snapshot = $cppDeviceOperatorSummary
     status = "passed"
 }

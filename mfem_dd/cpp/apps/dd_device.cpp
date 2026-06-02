@@ -9,6 +9,7 @@
 #include <iostream>
 #include <limits>
 #include <map>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -558,7 +559,7 @@ void PNSolveLDG(int elements, int order, real_t h,
                 const vector<real_t> &inv_mass, const Vector &carrier_coeff,
                 const DenseMatrix &M1, const DenseMatrix &M2,
                 const DenseMatrixInverse &poisson_solver,
-                Vector &phi_coeff, Vector &e_coeff)
+                Vector &phi_coeff, Vector &e_coeff, real_t bias = kPNBias)
 {
    const int size = elements*(order + 1);
    const real_t Cp = static_cast<real_t>(order)/h;
@@ -568,7 +569,7 @@ void PNSolveLDG(int elements, int order, real_t h,
    b1 = 0.0; b2 = 0.0; f_terms = 0.0;
 
    const real_t left_bound = PNPhiLeft();
-   const real_t right_bound = PNPhiRight();
+   const real_t right_bound = PNPhiLeft() + bias;
    for (int alpha = 0; alpha <= order; alpha++)
    {
       b1(ModalIndex(0, alpha, order)) =
@@ -756,6 +757,175 @@ PNCurrentSummary PNComputeCurrent(int elements, int order, real_t h,
    summary.left_contact = contact(0, -0.5);
    summary.right_contact = contact(elements - 1, 0.5);
    return summary;
+}
+
+struct PNChargeSummary
+{
+   real_t qmag = 0.0;
+   real_t wdep = 0.0;
+};
+
+struct PNTimeSolveResult
+{
+   Vector n_coeff;
+   Vector phi_coeff;
+   Vector e_coeff;
+   PNCurrentSummary current;
+   vector<pair<real_t, real_t> > history;
+   real_t time = 0.0;
+   real_t dt = 0.0;
+};
+
+real_t PNLegacyRound(real_t value)
+{
+   if (std::isnan(value) || std::isinf(value)) { return value; }
+   ostringstream ss;
+   ss << setprecision(5) << value;
+   return std::stod(ss.str());
+}
+
+PNChargeSummary PNComputeCharge(int elements, int order, real_t h,
+                                const Vector &n_coeff)
+{
+   const auto gauss = GaussLobatto(order);
+   vector<real_t> rho_cell(elements, 0.0);
+   PNChargeSummary summary;
+   for (int cell = 0; cell < elements; cell++)
+   {
+      const real_t center = kPNLeft + h*(static_cast<real_t>(cell) + 0.5);
+      for (const auto &g : gauss)
+      {
+         const real_t x = g.x*h + center;
+         const real_t rho = PNDopingProfile(x)
+                            - EvalModal(n_coeff, cell, order, g.x);
+         const real_t abs_rho = std::abs(rho);
+         summary.qmag += abs_rho*g.w*h;
+         rho_cell[cell] += abs_rho;
+      }
+      rho_cell[cell] /= static_cast<real_t>(gauss.size());
+   }
+   summary.qmag *= 0.5;
+
+   const real_t max_rho = *std::max_element(rho_cell.begin(), rho_cell.end());
+   const real_t threshold = std::max(0.05*max_rho, 1.0e-12);
+   for (int cell = 0; cell < elements; cell++)
+   {
+      if (rho_cell[cell] > threshold) { summary.wdep += h; }
+   }
+   return summary;
+}
+
+PNTimeSolveResult PNRunTimeSolve(int elements, int order, real_t h,
+                                 const vector<real_t> &inv_mass,
+                                 const DenseMatrix &diffusion,
+                                 const DenseMatrix &M1,
+                                 const DenseMatrix &M2,
+                                 const DenseMatrixInverse &poisson_solver,
+                                 real_t bias, real_t t_end,
+                                 const Vector *initial_n,
+                                 bool store_history)
+{
+   const int size = elements*(order + 1);
+   const real_t base_dt = 0.5*h;
+   Vector n_old(size);
+   if (initial_n != nullptr) { n_old = *initial_n; }
+   else { n_old = PNL2Projection(elements, order, h, inv_mass); }
+
+   PNTimeSolveResult result;
+   if (store_history)
+   {
+      result.history.push_back(
+         {0.0, std::numeric_limits<real_t>::quiet_NaN()});
+   }
+
+   real_t time_now = 0.0;
+   real_t current_dt = -1.0;
+   unique_ptr<DenseMatrix> implicit_matrix;
+   unique_ptr<DenseMatrixInverse> implicit_solver;
+
+   auto ensure_implicit_solver = [&](real_t dt)
+   {
+      if (!implicit_solver
+          || std::abs(dt - current_dt) > std::max(1.0e-14, std::numeric_limits<real_t>::epsilon()*std::max(dt, 1.0)))
+      {
+         implicit_solver.reset();
+         implicit_matrix = make_unique<DenseMatrix>(
+            PNMakeImplicitMatrix(diffusion, elements, order, h, inv_mass, dt));
+         implicit_solver = make_unique<DenseMatrixInverse>(*implicit_matrix);
+         current_dt = dt;
+      }
+   };
+
+   while (time_now < t_end - 1.0e-15)
+   {
+      const real_t dt = std::min(base_dt, t_end - time_now);
+      if (dt <= 0.0) { break; }
+      ensure_implicit_solver(dt);
+
+      Vector phi0(size), e0(size), rhs0(size), rhs1(size), rhs2(size), rhs3(size);
+      Vector n1(size), n2(size), n3(size), n_new(size);
+      PNSolveLDG(elements, order, h, inv_mass, n_old, M1, M2,
+                 poisson_solver, phi0, e0, bias);
+      rhs0 = PNTransportRHS(elements, order, n_old, e0);
+      Vector mass_term =
+         PNMassOverDtMult(n_old, elements, order, h, inv_mass, dt);
+      Vector solve_rhs = LinearCombination({{0.5, &rhs0}, {1.0, &mass_term}});
+      implicit_solver->Mult(solve_rhs, n1);
+
+      Vector phi1(size), e1(size);
+      PNSolveLDG(elements, order, h, inv_mass, n1, M1, M2,
+                 poisson_solver, phi1, e1, bias);
+      rhs1 = PNTransportRHS(elements, order, n1, e1);
+      Vector d_n1 = MatVecNew(diffusion, n1);
+      solve_rhs = LinearCombination({{11.0/18.0, &rhs0}, {1.0/18.0, &rhs1},
+                                     {1.0/6.0, &d_n1}, {1.0, &mass_term}});
+      implicit_solver->Mult(solve_rhs, n2);
+
+      Vector phi2(size), e2(size);
+      PNSolveLDG(elements, order, h, inv_mass, n2, M1, M2,
+                 poisson_solver, phi2, e2, bias);
+      rhs2 = PNTransportRHS(elements, order, n2, e2);
+      Vector d_n2 = MatVecNew(diffusion, n2);
+      solve_rhs = LinearCombination({{5.0/6.0, &rhs0}, {-5.0/6.0, &rhs1},
+                                     {0.5, &rhs2}, {-0.5, &d_n1},
+                                     {0.5, &d_n2}, {1.0, &mass_term}});
+      implicit_solver->Mult(solve_rhs, n3);
+
+      Vector phi3(size), e3(size);
+      PNSolveLDG(elements, order, h, inv_mass, n3, M1, M2,
+                 poisson_solver, phi3, e3, bias);
+      rhs3 = PNTransportRHS(elements, order, n3, e3);
+      Vector d_n3 = MatVecNew(diffusion, n3);
+      solve_rhs = LinearCombination({{0.25, &rhs0}, {1.75, &rhs1},
+                                     {0.75, &rhs2}, {-1.75, &rhs3},
+                                     {1.5, &d_n1}, {-1.5, &d_n2},
+                                     {0.5, &d_n3}, {1.0, &mass_term}});
+      implicit_solver->Mult(solve_rhs, n_new);
+
+      time_now += dt;
+      n_old = n_new;
+      result.dt = dt;
+
+      if (store_history)
+      {
+         Vector phi_tmp(size), e_tmp(size);
+         PNSolveLDG(elements, order, h, inv_mass, n_old, M1, M2,
+                    poisson_solver, phi_tmp, e_tmp, bias);
+         const PNCurrentSummary current =
+            PNComputeCurrent(elements, order, h, n_old, e_tmp);
+         result.history.push_back({time_now, current.right_contact});
+      }
+   }
+
+   result.n_coeff = n_old;
+   result.time = time_now;
+   result.phi_coeff.SetSize(size);
+   result.e_coeff.SetSize(size);
+   PNSolveLDG(elements, order, h, inv_mass, result.n_coeff, M1, M2,
+              poisson_solver, result.phi_coeff, result.e_coeff, bias);
+   result.current =
+      PNComputeCurrent(elements, order, h, result.n_coeff, result.e_coeff);
+   return result;
 }
 
 void WritePNOperatorMetrics(int elements, int order, real_t h, real_t dt,
@@ -1131,6 +1301,174 @@ void WritePNDeviceReferenceTables()
    }
 }
 
+DeviceSummary BuildDeviceSummary(const vector<array<real_t, 4>> &iv,
+                                 const vector<array<real_t, 3>> &cv,
+                                 const vector<array<real_t, 2>> &transient)
+{
+   auto lookup_iv = [&](real_t bias, int column)
+   {
+      for (const auto &row : iv)
+      {
+         if (std::abs(row[0] - bias) <= 1.0e-12) { return row[column]; }
+      }
+      throw runtime_error("Unable to find PN IV bias in generated table.");
+   };
+   auto lookup_cv = [&](real_t bias, int column)
+   {
+      for (const auto &row : cv)
+      {
+         if (std::abs(row[0] - bias) <= 1.0e-12) { return row[column]; }
+      }
+      throw runtime_error("Unable to find PN CV bias in generated table.");
+   };
+
+   DeviceSummary summary {};
+   summary.iv_rows = static_cast<real_t>(iv.size());
+   summary.cv_rows = static_cast<real_t>(cv.size());
+   summary.transient_rows = static_cast<real_t>(transient.size());
+   summary.iv_reverse_current_minus1v = lookup_iv(-1.0, 1);
+   summary.iv_zero_bias_current = lookup_iv(0.0, 1);
+   summary.iv_forward_current_1v = lookup_iv(1.0, 1);
+   summary.iv_zero_bias_qmag = lookup_iv(0.0, 2);
+   summary.cv_zero_bias_cqs = lookup_cv(0.0, 2);
+   for (const auto &row : transient)
+   {
+      if (!std::isnan(row[1]))
+      {
+         summary.transient_first_finite_time = row[0];
+         summary.transient_first_finite_current = row[1];
+         break;
+      }
+   }
+   summary.transient_terminal_time = transient.back()[0];
+   summary.transient_terminal_current = transient.back()[1];
+   return summary;
+}
+
+void WritePNDeviceTables(const vector<array<real_t, 4>> &iv,
+                         const vector<array<real_t, 3>> &cv,
+                         const vector<array<real_t, 2>> &transient)
+{
+   ofstream iv_out("iv_curve.csv");
+   ofstream cv_out("cv_curve.csv");
+   ofstream transient_out("transient_current.csv");
+   if (!iv_out || !cv_out || !transient_out)
+   {
+      throw runtime_error("Unable to write PN device CSV outputs.");
+   }
+
+   iv_out << setprecision(16) << "bias,right_current,Qmag,Wdep\n";
+   for (const auto &row : iv)
+   {
+      for (int c = 0; c < 4; c++)
+      {
+         if (c > 0) { iv_out << ","; }
+         WriteCsvValue(iv_out, row[c]);
+      }
+      iv_out << "\n";
+   }
+   cv_out << setprecision(16) << "bias,Qmag,Cqs\n";
+   for (const auto &row : cv)
+   {
+      for (int c = 0; c < 3; c++)
+      {
+         if (c > 0) { cv_out << ","; }
+         WriteCsvValue(cv_out, row[c]);
+      }
+      cv_out << "\n";
+   }
+   transient_out << setprecision(16) << "time,right_current\n";
+   for (const auto &row : transient)
+   {
+      for (int c = 0; c < 2; c++)
+      {
+         if (c > 0) { transient_out << ","; }
+         WriteCsvValue(transient_out, row[c]);
+      }
+      transient_out << "\n";
+   }
+}
+
+int RunNativePNPhysicalSolve(int elements, int order)
+{
+   if (elements <= 0) { elements = 160; }
+   if (order <= 0) { order = 2; }
+   if (elements != 160 || order != 2)
+   {
+      cerr << "Native PN physical solve currently targets the 160-cell, "
+           << "p=2 legacy device configuration. Use -n 160 -o 2." << endl;
+      return 2;
+   }
+
+   const real_t h = (kPNRight - kPNLeft)/static_cast<real_t>(elements);
+   const vector<real_t> inv_mass = PNInverseMass(order);
+   const DenseMatrix diffusion = AssemblePNIPDGDiffusion(elements, order, h);
+   DenseMatrix M1, M2, Mn;
+   AssemblePNLDG(elements, order, h, inv_mass, M1, M2, Mn);
+   const DenseMatrixInverse poisson_solver(Mn);
+
+   vector<array<real_t, 4>> iv;
+   vector<array<real_t, 4>> iv_raw;
+   vector<array<real_t, 3>> cv;
+   const vector<real_t> bias_list = {-1.0, -0.75, -0.5, -0.25, 0.0,
+                                    0.25, 0.5, 0.75, 1.0};
+   Vector previous_n;
+   bool has_previous = false;
+   for (const real_t bias : bias_list)
+   {
+      const PNTimeSolveResult solve =
+         PNRunTimeSolve(elements, order, h, inv_mass, diffusion, M1, M2,
+                        poisson_solver, bias, 1.0,
+                        has_previous ? &previous_n : nullptr, false);
+      const PNChargeSummary charge =
+         PNComputeCharge(elements, order, h, solve.n_coeff);
+      iv_raw.push_back({{bias, solve.current.right_contact,
+                         charge.qmag, charge.wdep}});
+      iv.push_back({{PNLegacyRound(bias),
+                     PNLegacyRound(solve.current.right_contact),
+                     PNLegacyRound(charge.qmag),
+                     PNLegacyRound(charge.wdep)}});
+      previous_n = solve.n_coeff;
+      has_previous = true;
+   }
+
+   for (size_t k = 1; k + 1 < iv.size(); k++)
+   {
+      const real_t dq = iv_raw[k + 1][2] - iv_raw[k - 1][2];
+      const real_t dv = iv_raw[k + 1][0] - iv_raw[k - 1][0];
+      cv.push_back({{PNLegacyRound(iv_raw[k][0]),
+                     PNLegacyRound(iv_raw[k][2]),
+                     PNLegacyRound(dq/dv)}});
+   }
+
+   const PNTimeSolveResult forward =
+      PNRunTimeSolve(elements, order, h, inv_mass, diffusion, M1, M2,
+                     poisson_solver, 0.6, 0.3, nullptr, false);
+   const PNTimeSolveResult transient_solve =
+      PNRunTimeSolve(elements, order, h, inv_mass, diffusion, M1, M2,
+                     poisson_solver, -0.8, 0.2, &forward.n_coeff, true);
+   vector<array<real_t, 2>> transient;
+   for (const auto &row : transient_solve.history)
+   {
+      transient.push_back({{PNLegacyRound(row.first), PNLegacyRound(row.second)}});
+   }
+
+   const DeviceSummary summary = BuildDeviceSummary(iv, cv, transient);
+   WriteMetrics(elements, order, 1, elements*(order + 1), h, "native_solve",
+                summary.iv_zero_bias_qmag, summary, "native_cpp_device_solve");
+   WritePNDeviceTables(iv, cv, transient);
+
+   cout << "case=dd_pn_device"
+        << " backend=native_solve"
+        << " iv_rows=" << summary.iv_rows
+        << " cv_rows=" << summary.cv_rows
+        << " transient_rows=" << summary.transient_rows
+        << " iv_forward_current_1v=" << summary.iv_forward_current_1v
+        << " transient_terminal_current="
+        << summary.transient_terminal_current << endl;
+   return 0;
+}
+
 string ToForwardSlashes(string path)
 {
    for (char &ch : path)
@@ -1299,7 +1637,8 @@ int main(int argc, char *argv[])
    args.AddOption(&dim, "-d", "--dimension", "Mesh dimension: 1 or 2.");
    args.AddOption(&backend, "-b", "--backend",
                   "Backend: mfem_projection, legacy_baseline, matlab_mfem, "
-                  "native_table, native_operator_snapshot, or native_mfem.");
+                  "native_table, native_solve, native_operator_snapshot, "
+                  "or native_mfem.");
    args.AddOption(&precision, "-p", "--precision", "Output precision.");
    args.Parse();
    if (!args.Good())
@@ -1343,6 +1682,12 @@ int main(int argc, char *argv[])
            << " transient_terminal_current="
            << kPN1DLegacy.transient_terminal_current << endl;
       return 0;
+   }
+
+   if (backend == "native_solve" || backend == "native_cpp_solve"
+       || backend == "native_device_solve")
+   {
+      return RunNativePNPhysicalSolve(elements, order);
    }
 
    if (backend == "matlab_mfem" || backend == "native_matlab"
