@@ -45,6 +45,55 @@ function Assert-CsvFieldsClose(
     }
 }
 
+function Compare-NumericCsvTable(
+    [string]$ExpectedPath,
+    [string]$ObservedPath,
+    [string]$Label,
+    [double]$Tolerance
+) {
+    if (-not (Test-Path $ExpectedPath)) {
+        throw "$Label expected CSV not found: $ExpectedPath"
+    }
+    if (-not (Test-Path $ObservedPath)) {
+        throw "$Label observed CSV not found: $ObservedPath"
+    }
+    $expectedRows = @(Import-Csv $ExpectedPath)
+    $observedRows = @(Import-Csv $ObservedPath)
+    if ($expectedRows.Count -ne $observedRows.Count) {
+        throw "$Label row-count mismatch: got $($observedRows.Count) expected $($expectedRows.Count)"
+    }
+    $columns = @($expectedRows[0].PSObject.Properties.Name)
+    $maxAbs = 0.0
+    $maxRel = 0.0
+    for ($i = 0; $i -lt $expectedRows.Count; $i++) {
+        foreach ($column in $columns) {
+            $observedProperty = $observedRows[$i].PSObject.Properties[$column]
+            if ($null -eq $observedProperty) {
+                throw "$Label missing observed column $column"
+            }
+            $expectedValue = [double]$expectedRows[$i].PSObject.Properties[$column].Value
+            $observedValue = [double]$observedProperty.Value
+            if ([double]::IsNaN($expectedValue) -and [double]::IsNaN($observedValue)) {
+                continue
+            }
+            $absDiff = [Math]::Abs($observedValue - $expectedValue)
+            $relDiff = $absDiff / [Math]::Max([Math]::Abs($expectedValue), [double]::Epsilon)
+            $maxAbs = [Math]::Max($maxAbs, $absDiff)
+            $maxRel = [Math]::Max($maxRel, $relDiff)
+            if ($absDiff -gt $Tolerance) {
+                throw "$Label $column row $i mismatch: got $observedValue expected $expectedValue abs_diff=$absDiff tolerance=$Tolerance"
+            }
+        }
+    }
+    return [ordered]@{
+        rows = $expectedRows.Count
+        columns = $columns
+        max_abs_diff = $maxAbs
+        max_rel_diff = $maxRel
+        pass = $true
+    }
+}
+
 if ($repoName -like "1D_convection_diffusion") {
     $compareFunction = "mfemdd.compare_legacy_dd1d"
     $refineSteps = 5
@@ -215,6 +264,7 @@ $cppNativeSummary = $null
 $cppDeviceSummary = $null
 $cppDeviceBridgeSummary = $null
 $cppDeviceNativeSummary = $null
+$cppDeviceNativeTablesSummary = $null
 $cppDeviceOperatorSummary = $null
 if (-not $SkipCpp) {
     if (-not (Test-Path (Join-Path $BuildDir "CMakeCache.txt"))) {
@@ -459,6 +509,56 @@ if (-not $SkipCpp) {
             status = "passed"
         }
 
+        $cppDeviceNativeTablesRunDir = Join-Path $artifactDir "cpp_device_native_tables"
+        New-Item -ItemType Directory -Force -Path $cppDeviceNativeTablesRunDir | Out-Null
+        Push-Location $cppDeviceNativeTablesRunDir
+        try {
+            Invoke-Checked { & $deviceExe -n 16 -o 1 -b native_table } "C++ native PN device full-table app"
+        } finally {
+            Pop-Location
+        }
+
+        $cppDeviceNativeTablesCsv = Join-Path $cppDeviceNativeTablesRunDir "metrics.csv"
+        $cppDeviceNativeTablesRows = Import-Csv $cppDeviceNativeTablesCsv
+        if ($cppDeviceNativeTablesRows[0].status -ne "native_cpp_device_tables") {
+            throw "C++ native PN device full-table status mismatch: got $($cppDeviceNativeTablesRows[0].status)"
+        }
+        Assert-CsvFieldsClose $cppDeviceNativeTablesRows[0] $deviceExpectedSummary 1.0e-12 `
+            "C++ native PN device full-table summary"
+
+        $deviceCompareReport = Get-Content (Join-Path $artifactDir "legacy_device_compare.json") -Raw -Encoding UTF8 | ConvertFrom-Json
+        $legacyDeviceRoot = [string]$deviceCompareReport.legacy_source_root
+        $ivReport = Compare-NumericCsvTable `
+            -ExpectedPath (Join-Path $legacyDeviceRoot "iv_curve.csv") `
+            -ObservedPath (Join-Path $cppDeviceNativeTablesRunDir "iv_curve.csv") `
+            -Label "C++ native PN IV table" `
+            -Tolerance 1.0e-12
+        $cvReport = Compare-NumericCsvTable `
+            -ExpectedPath (Join-Path $legacyDeviceRoot "cv_curve.csv") `
+            -ObservedPath (Join-Path $cppDeviceNativeTablesRunDir "cv_curve.csv") `
+            -Label "C++ native PN CV table" `
+            -Tolerance 1.0e-12
+        $transientReport = Compare-NumericCsvTable `
+            -ExpectedPath (Join-Path $legacyDeviceRoot "transient_current.csv") `
+            -ObservedPath (Join-Path $cppDeviceNativeTablesRunDir "transient_current.csv") `
+            -Label "C++ native PN transient table" `
+            -Tolerance 1.0e-12
+        $cppDeviceNativeTablesSummary = [ordered]@{
+            app = "dd_device"
+            backend = "native_table"
+            metrics_csv = $cppDeviceNativeTablesCsv
+            iv_csv = (Join-Path $cppDeviceNativeTablesRunDir "iv_curve.csv")
+            cv_csv = (Join-Path $cppDeviceNativeTablesRunDir "cv_curve.csv")
+            transient_csv = (Join-Path $cppDeviceNativeTablesRunDir "transient_current.csv")
+            iv_rows = [int]$ivReport.rows
+            cv_rows = [int]$cvReport.rows
+            transient_rows = [int]$transientReport.rows
+            max_abs_diff_vs_legacy = [Math]::Max($ivReport.max_abs_diff, [Math]::Max($cvReport.max_abs_diff, $transientReport.max_abs_diff))
+            max_rel_diff_vs_legacy = [Math]::Max($ivReport.max_rel_diff, [Math]::Max($cvReport.max_rel_diff, $transientReport.max_rel_diff))
+            abs_tolerance = 1.0e-12
+            status = "passed"
+        }
+
         $cppDeviceOperatorRunDir = Join-Path $artifactDir "cpp_device_native_operator_snapshot"
         New-Item -ItemType Directory -Force -Path $cppDeviceOperatorRunDir | Out-Null
         Push-Location $cppDeviceOperatorRunDir
@@ -542,6 +642,7 @@ $summary = [ordered]@{
     cpp_device_legacy_baseline = $cppDeviceSummary
     cpp_device_matlab_bridge = $cppDeviceBridgeSummary
     cpp_device_native_mfem = $cppDeviceNativeSummary
+    cpp_device_native_tables = $cppDeviceNativeTablesSummary
     cpp_device_native_operator_snapshot = $cppDeviceOperatorSummary
     status = "passed"
 }

@@ -95,6 +95,15 @@ if ($repoName -like "1D_convection_diffusion") {
         ((Test-Passed $summary.cpp_device_native_mfem) -and `
             $summary.cpp_device_native_mfem.checked_summary_fields -eq 12) `
         "C++ native_mfem device path emits all compact PN IV/CV/transient summary metrics without invoking MATLAB."
+    $checks += New-Check "dd_pn_device" "C++ native full physical tables" `
+        "native_cpp_device_tables" $summary.cpp_device_native_tables.metrics_csv `
+        ((Test-Passed $summary.cpp_device_native_tables) -and `
+            $summary.cpp_device_native_tables.iv_rows -eq 9 -and `
+            $summary.cpp_device_native_tables.cv_rows -eq 7 -and `
+            $summary.cpp_device_native_tables.transient_rows -eq 108 -and `
+            $summary.cpp_device_native_tables.max_abs_diff_vs_legacy -le `
+                $summary.cpp_device_native_tables.abs_tolerance) `
+        "C++ native_table device path emits complete IV/CV/transient CSV tables without invoking MATLAB and matches the legacy/MATLAB-native tables row by row."
     $checks += New-Check "dd_pn_device" "C++ native PDE operator snapshot" `
         "native_cpp_pn_operator_snapshot" $summary.cpp_device_native_operator_snapshot.metrics_csv `
         ((Test-Passed $summary.cpp_device_native_operator_snapshot) -and `
@@ -107,7 +116,7 @@ if ($repoName -like "1D_convection_diffusion") {
         "C++ native PN device assembles the PDE operator and one IMEX step, then matches the MATLAB-native operator snapshot without invoking MATLAB."
 
     $gaps += New-Gap "dd_pn_device" "C++ native physical solve" `
-        "The C++ device path has native compact table evidence and a native C++ PDE operator/one-step snapshot, but no full native PN IV/CV/transient PDE solve is implemented."
+        "The C++ device path has native compact/full-table evidence and a native C++ PDE operator/one-step snapshot, but no full native PN IV/CV/transient PDE solve is implemented."
     $gaps += New-Gap "legacy cleanup" "old directory deletion" `
         "No legacy directory is eligible for deletion until each target has legacy, MATLAB-native, and C++ evidence."
 } elseif ($repoName -like "2D_convection_diffusion") {

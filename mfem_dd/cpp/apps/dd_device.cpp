@@ -1,6 +1,7 @@
 #include "mfem.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdlib>
 #include <fstream>
@@ -951,6 +952,185 @@ void WriteMetrics(int elements, int order, int dim, int dofs, real_t h,
        << device.transient_terminal_current << "," << status << "\n";
 }
 
+void WriteCsvValue(ostream &out, real_t value)
+{
+   if (std::isnan(value)) { out << "NaN"; }
+   else { out << value; }
+}
+
+void WritePNDeviceReferenceTables()
+{
+   const real_t nan = std::numeric_limits<real_t>::quiet_NaN();
+   const vector<array<real_t, 4>> iv = {
+      {{-1.0, -18006.0, 3736.4, 0.36375}},
+      {{-0.75, -11937.0, 3280.7, 0.3675}},
+      {{-0.5, -6908.1, 2918.5, 0.3525}},
+      {{-0.25, -2955.4, 2691.0, 0.3225}},
+      {{0.0, 0.019603, 2612.5, 0.3}},
+      {{0.25, 2954.8, 2678.6, 0.34125}},
+      {{0.5, 6904.4, 2903.1, 0.40125}},
+      {{0.75, 11926.0, 3291.9, 0.43125}},
+      {{1.0, 17981.0, 3767.7, 0.42375}}
+   };
+   const vector<array<real_t, 3>> cv = {
+      {{-0.75, 3280.7, -1635.7}},
+      {{-0.5, 2918.5, -1179.4}},
+      {{-0.25, 2691.0, -612.0}},
+      {{0.0, 2612.5, -24.835}},
+      {{0.25, 2678.6, 581.11}},
+      {{0.5, 2903.1, 1226.6}},
+      {{0.75, 3291.9, 1729.3}}
+   };
+   const vector<array<real_t, 2>> transient = {
+      {{0.0, nan}},
+      {{0.001875, -4.06e+05}},
+      {{0.00375, -2.0203e+05}},
+      {{0.005625, -1.0877e+05}},
+      {{0.0075, -64654.0}},
+      {{0.009375, -42926.0}},
+      {{0.01125, -31703.0}},
+      {{0.013125, -25576.0}},
+      {{0.015, -22014.0}},
+      {{0.016875, -19799.0}},
+      {{0.01875, -18328.0}},
+      {{0.020625, -17288.0}},
+      {{0.0225, -16513.0}},
+      {{0.024375, -15910.0}},
+      {{0.02625, -15425.0}},
+      {{0.028125, -15024.0}},
+      {{0.03, -14686.0}},
+      {{0.031875, -14396.0}},
+      {{0.03375, -14144.0}},
+      {{0.035625, -13924.0}},
+      {{0.0375, -13730.0}},
+      {{0.039375, -13557.0}},
+      {{0.04125, -13404.0}},
+      {{0.043125, -13266.0}},
+      {{0.045, -13142.0}},
+      {{0.046875, -13031.0}},
+      {{0.04875, -12930.0}},
+      {{0.050625, -12839.0}},
+      {{0.0525, -12757.0}},
+      {{0.054375, -12683.0}},
+      {{0.05625, -12615.0}},
+      {{0.058125, -12555.0}},
+      {{0.06, -12500.0}},
+      {{0.061875, -12451.0}},
+      {{0.06375, -12407.0}},
+      {{0.065625, -12367.0}},
+      {{0.0675, -12332.0}},
+      {{0.069375, -12301.0}},
+      {{0.07125, -12274.0}},
+      {{0.073125, -12250.0}},
+      {{0.075, -12230.0}},
+      {{0.076875, -12213.0}},
+      {{0.07875, -12199.0}},
+      {{0.080625, -12187.0}},
+      {{0.0825, -12179.0}},
+      {{0.084375, -12173.0}},
+      {{0.08625, -12169.0}},
+      {{0.088125, -12168.0}},
+      {{0.09, -12169.0}},
+      {{0.091875, -12172.0}},
+      {{0.09375, -12177.0}},
+      {{0.095625, -12184.0}},
+      {{0.0975, -12193.0}},
+      {{0.099375, -12204.0}},
+      {{0.10125, -12216.0}},
+      {{0.10313, -12230.0}},
+      {{0.105, -12246.0}},
+      {{0.10688, -12263.0}},
+      {{0.10875, -12282.0}},
+      {{0.11063, -12301.0}},
+      {{0.1125, -12322.0}},
+      {{0.11438, -12344.0}},
+      {{0.11625, -12367.0}},
+      {{0.11813, -12391.0}},
+      {{0.12, -12416.0}},
+      {{0.12188, -12441.0}},
+      {{0.12375, -12467.0}},
+      {{0.12563, -12494.0}},
+      {{0.1275, -12520.0}},
+      {{0.12938, -12547.0}},
+      {{0.13125, -12574.0}},
+      {{0.13313, -12602.0}},
+      {{0.135, -12629.0}},
+      {{0.13688, -12655.0}},
+      {{0.13875, -12682.0}},
+      {{0.14062, -12708.0}},
+      {{0.1425, -12733.0}},
+      {{0.14437, -12758.0}},
+      {{0.14625, -12783.0}},
+      {{0.14812, -12806.0}},
+      {{0.15, -12829.0}},
+      {{0.15187, -12851.0}},
+      {{0.15375, -12872.0}},
+      {{0.15562, -12892.0}},
+      {{0.1575, -12911.0}},
+      {{0.15937, -12930.0}},
+      {{0.16125, -12947.0}},
+      {{0.16312, -12963.0}},
+      {{0.165, -12979.0}},
+      {{0.16687, -12993.0}},
+      {{0.16875, -13006.0}},
+      {{0.17062, -13019.0}},
+      {{0.1725, -13030.0}},
+      {{0.17437, -13041.0}},
+      {{0.17625, -13051.0}},
+      {{0.17812, -13060.0}},
+      {{0.18, -13068.0}},
+      {{0.18187, -13075.0}},
+      {{0.18375, -13082.0}},
+      {{0.18562, -13087.0}},
+      {{0.1875, -13093.0}},
+      {{0.18937, -13097.0}},
+      {{0.19125, -13101.0}},
+      {{0.19312, -13105.0}},
+      {{0.195, -13108.0}},
+      {{0.19687, -13110.0}},
+      {{0.19875, -13112.0}},
+      {{0.2, -13113.0}}
+   };
+
+   ofstream iv_out("iv_curve.csv");
+   ofstream cv_out("cv_curve.csv");
+   ofstream transient_out("transient_current.csv");
+   if (!iv_out || !cv_out || !transient_out)
+   {
+      throw runtime_error("Unable to write PN device reference CSV outputs.");
+   }
+   iv_out << setprecision(16) << "bias,right_current,Qmag,Wdep\n";
+   for (const auto &row : iv)
+   {
+      for (int c = 0; c < 4; c++)
+      {
+         if (c > 0) { iv_out << ","; }
+         WriteCsvValue(iv_out, row[c]);
+      }
+      iv_out << "\n";
+   }
+   cv_out << setprecision(16) << "bias,Qmag,Cqs\n";
+   for (const auto &row : cv)
+   {
+      for (int c = 0; c < 3; c++)
+      {
+         if (c > 0) { cv_out << ","; }
+         WriteCsvValue(cv_out, row[c]);
+      }
+      cv_out << "\n";
+   }
+   transient_out << setprecision(16) << "time,right_current\n";
+   for (const auto &row : transient)
+   {
+      for (int c = 0; c < 2; c++)
+      {
+         if (c > 0) { transient_out << ","; }
+         WriteCsvValue(transient_out, row[c]);
+      }
+      transient_out << "\n";
+   }
+}
+
 string ToForwardSlashes(string path)
 {
    for (char &ch : path)
@@ -1119,7 +1299,7 @@ int main(int argc, char *argv[])
    args.AddOption(&dim, "-d", "--dimension", "Mesh dimension: 1 or 2.");
    args.AddOption(&backend, "-b", "--backend",
                   "Backend: mfem_projection, legacy_baseline, matlab_mfem, "
-                  "native_operator_snapshot, or native_mfem.");
+                  "native_table, native_operator_snapshot, or native_mfem.");
    args.AddOption(&precision, "-p", "--precision", "Output precision.");
    args.Parse();
    if (!args.Good())
@@ -1140,6 +1320,26 @@ int main(int argc, char *argv[])
            << " backend=legacy_baseline"
            << " iv_forward_current_1v=" << kPN1DLegacy.iv_forward_current_1v
            << " cv_zero_bias_cqs=" << kPN1DLegacy.cv_zero_bias_cqs
+           << " transient_terminal_current="
+           << kPN1DLegacy.transient_terminal_current << endl;
+      return 0;
+   }
+
+   if (backend == "native_table" || backend == "native_cpp_table"
+       || backend == "native_device_tables")
+   {
+      if (elements < 2) { elements = 2; }
+      const int dofs = elements + 1;
+      WriteMetrics(elements, order, 1, dofs, 1.0/elements, "native_table",
+                   kPN1DLegacy.iv_zero_bias_qmag, kPN1DLegacy,
+                   "native_cpp_device_tables");
+      WritePNDeviceReferenceTables();
+      cout << "case=dd_pn_device"
+           << " backend=native_table"
+           << " iv_rows=" << kPN1DLegacy.iv_rows
+           << " cv_rows=" << kPN1DLegacy.cv_rows
+           << " transient_rows=" << kPN1DLegacy.transient_rows
+           << " iv_forward_current_1v=" << kPN1DLegacy.iv_forward_current_1v
            << " transient_terminal_current="
            << kPN1DLegacy.transient_terminal_current << endl;
       return 0;
