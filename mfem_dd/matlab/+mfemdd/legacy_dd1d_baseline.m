@@ -3,16 +3,21 @@ function baseline = legacy_dd1d_baseline(varargin)
 opts = local_parse_options(varargin{:});
 root = fileparts(fileparts(fileparts(mfilename("fullpath"))));
 repo_root = fileparts(root);
-legacy_root = fullfile(repo_root, "DD验阶", "DD1D_smooth", "V1");
-result_file = fullfile(legacy_root, "result", ...
+baseline_root = fullfile(root, "cases", "dd1d_smooth_mms", "legacy_baseline");
+result_file = fullfile(baseline_root, ...
     sprintf("error_table_%s_p%d.txt", upper(opts.method), opts.p_order));
 
 if opts.run_legacy
+    legacy_root = fullfile(repo_root, "DD验阶", "DD1D_smooth", "V1");
+    if ~isfolder(legacy_root)
+        error("Legacy DD1D runtime folder has been removed after migration: %s", legacy_root);
+    end
     baseline = local_run_legacy(legacy_root, opts);
 else
     baseline = mfemdd.read_legacy_error_table(result_file);
     baseline.source = string(result_file);
-    baseline.generated_by = "stored_legacy_table";
+    baseline.generated_by = "controlled_legacy_table";
+    baseline.original_legacy_source = "DD验阶/DD1D_smooth/V1/result/error_table_SIPG_p3.txt";
 end
 end
 

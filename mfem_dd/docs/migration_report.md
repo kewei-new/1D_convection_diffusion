@@ -3,37 +3,38 @@
 ## Current status
 
 This repository now has an MFEM-first scaffold under `mfem_dd/`.
-No legacy folder is superseded or deleted in this commit.
+This deletion-strategy update removes only the completed 1D legacy working
+directories after their legacy baselines, MATLAB-native outputs, and C++ native
+outputs were recorded. The controlled baselines now live under `mfem_dd/cases/`.
 
-The first baseline adapter for `dd1d_smooth_mms` is now available through:
+The baseline adapter for `dd1d_smooth_mms` is now available through:
 
 ```matlab
 run_case("dd1d_smooth_mms", "order", 3, "backend", "legacy_matlab")
-run_case("dd1d_smooth_mms", "elements", 20, "order", 3, "backend", "legacy_runtime")
 ```
 
 The `legacy_matlab` backend reads the stored legacy table
-`DD验阶/DD1D_smooth/V1/result/error_table_SIPG_p3.txt` through the unified
-`mfem_dd` entry point. It is a baseline adapter, not a replacement solver.
-The `legacy_runtime` backend runs the original MATLAB solver for the requested
-mesh size from the same unified case API.
+`mfem_dd/cases/dd1d_smooth_mms/legacy_baseline/error_table_SIPG_p3.txt`
+through the unified `mfem_dd` entry point. Its original source was
+`DD验阶/DD1D_smooth/V1/result/error_table_SIPG_p3.txt`. It is a baseline
+adapter, not a replacement solver.
+The optional `legacy_runtime` backend can still run the original MATLAB solver
+only if the old working folder is restored locally; it is no longer part of the
+post-deletion validation gate.
 The default `matlab_mfem` backend now resolves to a self-contained MATLAB-native
-port inside `mfem_dd` for `dd1d_smooth_mms`; the old runtime remains available
-as `backend="legacy_runtime"` and the original projection scaffold remains
-available as `backend="mfem_projection"`.
+port inside `mfem_dd` for `dd1d_smooth_mms`; the original projection scaffold
+remains available as `backend="mfem_projection"`.
 
 The comparison layer also supports:
 
 ```matlab
-r = mfemdd.compare_legacy_dd1d("backend", "legacy_runtime", "refine_steps", 5);
+r = mfemdd.compare_legacy_dd1d("backend", "matlab_mfem", "refine_steps", 5);
 ```
 
-This route runs the original MATLAB solver from the unified `mfem_dd` API and
-compares the recomputed table against the stored legacy table. The default
-`matlab_mfem` route instead runs the self-contained `mfemdd.dd1d_native_baseline`
-implementation copied into the unified framework.
+This route compares the self-contained `mfemdd.dd1d_native_baseline`
+implementation against the controlled stored legacy table.
 
-The regression suite can now emit legacy-runtime metrics through the same CSV
+The regression suite can now emit controlled legacy-baseline metrics through the same CSV
 schema:
 
 ```matlab
@@ -41,7 +42,7 @@ cd mfem_dd/matlab
 startup_mfem_dd
 run_regression_suite("quick", true, ...
     "order", 3, ...
-    "backend", "legacy_runtime", ...
+    "backend", "legacy_matlab", ...
     "include_device", false)
 ```
 
@@ -75,8 +76,9 @@ run_case("dd_pn_device", "backend", "matlab_mfem")
 r = mfemdd.compare_legacy_pn1d("backend", "matlab_mfem")
 ```
 
-It reads the legacy CSV outputs under
-`DD*/V3/DD1D_pn_junction/result/pn_junction/`:
+It reads the controlled legacy CSV outputs under
+`mfem_dd/cases/dd_pn_device/legacy_baseline/pn_junction/`. Their original
+source was `DD模拟/V3/DD1D_pn_junction/result/pn_junction/`:
 
 - `iv_curve.csv`
 - `cv_curve.csv`
@@ -85,8 +87,8 @@ It reads the legacy CSV outputs under
 The current `matlab_mfem` device path recomputes the PN junction solve from a
 self-contained source mirror under `mfem_dd/matlab/native/dd1d_pn_junction`.
 It then reports the IV/CV/transient tables using the same legacy `dlmwrite`
-effective precision so the comparison is against the old files as actually
-written, while the raw recomputed tables remain attached to the native baseline
+effective precision so the comparison is against the controlled baseline files
+as actually written, while the raw recomputed tables remain attached to the native baseline
 object as `iv_raw`, `cv_raw`, and `transient_raw`.
 
 The C++ `dd_device` app also has a 1D PN baseline mode:
@@ -107,7 +109,7 @@ The `native_mfem` mode emits the same compact IV/CV/transient summary evidence
 from C++ without invoking MATLAB, with `status=native_cpp_device_table`.
 The `native_table` mode writes complete `iv_curve.csv`, `cv_curve.csv`, and
 `transient_current.csv` tables from C++ with `status=native_cpp_device_tables`
-and compares them row by row to the old files. This is table-output evidence,
+and compares them row by row to the controlled legacy baseline files. This is table-output evidence,
 not yet a PDE-level native C++ PN device solver. The `native_solve` mode runs
 the native C++ PN IV/CV/forward-transient PDE experiments on the 160-cell,
 p=2 legacy configuration, writes the same three CSV tables with
@@ -136,9 +138,9 @@ A full local validation gate is available:
 powershell -ExecutionPolicy Bypass -File mfem_dd/tools/run_legacy_validation.ps1
 ```
 
-It runs the full MATLAB legacy-runtime table comparison, MATLAB PN device CSV
-comparison, quick MATLAB legacy-runtime regression, C++ build, CTest, the C++
-MMS legacy-baseline app for all 5 embedded legacy mesh rows, the C++ native
+It runs the full MATLAB controlled legacy-table comparison, MATLAB PN device CSV
+comparison, quick MATLAB controlled-baseline regression, C++ build, CTest, the
+C++ MMS legacy-baseline app for all 5 embedded legacy mesh rows, the C++ native
 MFEM MMS backend against the MATLAB-native full-precision table, the C++ PN
 device legacy-baseline app, the C++ PN device MATLAB-native bridge, the C++
 native compact PN summary backend, the C++ native complete PN table backend,
@@ -159,9 +161,9 @@ mfem_dd/tools/write_alignment_audit.ps1
 
 The audit output is
 `mfem_dd/artifacts/alignment_audit/alignment_audit.json`. It classifies each
-piece of evidence as native, bridge, or baseline adapter and keeps the remaining
-native gaps explicit, so passing validation is not mistaken for permission to
-delete legacy folders.
+piece of evidence as native, bridge, or baseline adapter. In this 1D repository,
+the two completed targets have no remaining native gaps and are eligible for
+legacy-folder deletion; 2D deletion remains controlled by the 2D repository.
 
 ## Tolerances
 
@@ -174,9 +176,9 @@ delete legacy folders.
 
 | Case | Legacy baseline | MATLAB status | C++ status | Delete legacy? | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `dd1d_smooth_mms` | `DD验阶/DD1D_smooth/V1/result/error_table_SIPG_p3.txt` | default `matlab_mfem` uses self-contained `mfem_dd` MATLAB-native IPDG/LDG/IMEX code and matches all 5 mesh rows within numerical tolerances; explicit `legacy_runtime` remains as old-runtime cross-check; `legacy_matlab` matches the stored table exactly; `mfem_projection` remains scaffold-only | `dd1d_mms -b legacy_baseline` writes stored legacy metrics and validation checks all 5 embedded rows; `dd1d_mms -b native_mfem` runs the native C++ IPDG/LDG/IMEX backend and matches the MATLAB-native table within `2e-12` absolute tolerance | No | First migration target. |
+| `dd1d_smooth_mms` | controlled: `mfem_dd/cases/dd1d_smooth_mms/legacy_baseline/error_table_SIPG_p3.txt`; original: `DD验阶/DD1D_smooth/V1/result/error_table_SIPG_p3.txt` | default `matlab_mfem` uses self-contained `mfem_dd` MATLAB-native IPDG/LDG/IMEX code and matches all 5 mesh rows within numerical tolerances; `legacy_matlab` matches the controlled stored table exactly; `mfem_projection` remains scaffold-only | `dd1d_mms -b legacy_baseline` writes stored legacy metrics and validation checks all 5 embedded rows; `dd1d_mms -b native_mfem` runs the native C++ IPDG/LDG/IMEX backend and matches the MATLAB-native table within `2e-12` absolute tolerance | Yes: removed `DD验阶/DD1D_smooth/` locally after baseline copy | Completed. |
 | `dd2d_smooth_mms` | Pending: compare in 2D repository | Scaffold implemented | Scaffold implemented | No | Included for API symmetry. |
-| `dd_pn_device` | `DD*/V3/DD1D_pn_junction/result/pn_junction/{iv_curve.csv,cv_curve.csv,transient_current.csv}` | default `matlab_mfem` recomputes the PN solve from `mfem_dd/matlab/native/dd1d_pn_junction` and matches the full legacy CSV outputs; `mfemdd.dd1d_native_pn_operator_snapshot` exports native MATLAB PDE operator/one-step summaries for C++ port alignment; `legacy_matlab` and `legacy_runtime` still read the stored CSV baseline; `mfem_projection` remains scaffold-only | `dd_device -b legacy_baseline` writes the stored compact legacy PN metrics; `dd_device -b matlab_mfem` invokes the MATLAB-native PN solve and emits matched compact metrics; `dd_device -b native_mfem` emits matched compact summary metrics from C++ without invoking MATLAB; `dd_device -b native_table` emits complete matched C++ tables; `dd_device -b native_solve` runs the native C++ PN PDE IV/CV/transient experiments and matches the legacy CSV tables; `dd_device -b native_operator_snapshot` assembles the native C++ PN PDE operator and matches the MATLAB operator/one-step snapshot | No | MATLAB-native physical path closed and PDE-level MATLAB snapshot exists; C++ compact/table/PDE physical-output evidence and native PDE operator/one-step evidence are available. |
+| `dd_pn_device` | controlled: `mfem_dd/cases/dd_pn_device/legacy_baseline/pn_junction/{iv_curve.csv,cv_curve.csv,transient_current.csv}`; original: `DD模拟/V3/DD1D_pn_junction/result/pn_junction/` | default `matlab_mfem` recomputes the PN solve from `mfem_dd/matlab/native/dd1d_pn_junction` and matches the full controlled legacy CSV outputs; `mfemdd.dd1d_native_pn_operator_snapshot` exports native MATLAB PDE operator/one-step summaries for C++ port alignment; `legacy_matlab` reads the controlled CSV baseline; `mfem_projection` remains scaffold-only | `dd_device -b legacy_baseline` writes the stored compact legacy PN metrics; `dd_device -b matlab_mfem` invokes the MATLAB-native PN solve and emits matched compact metrics; `dd_device -b native_mfem` emits matched compact summary metrics from C++ without invoking MATLAB; `dd_device -b native_table` emits complete matched C++ tables; `dd_device -b native_solve` runs the native C++ PN PDE IV/CV/transient experiments and matches the legacy CSV tables; `dd_device -b native_operator_snapshot` assembles the native C++ PN PDE operator and matches the MATLAB operator/one-step snapshot | Yes: removed `DD模拟/V3/DD1D_pn_junction/` locally after baseline copy | Completed. |
 
 `dd_device -b native_table` additionally writes the complete C++ native
 IV/CV/transient CSV tables and validates them row by row against the same
@@ -192,7 +194,6 @@ Command:
 ```matlab
 cd mfem_dd/tools
 run_legacy_dd1d_compare("backend", "legacy_matlab")
-run_legacy_dd1d_compare("backend", "legacy_runtime", "refine_steps", 5)
 run_legacy_dd1d_compare("backend", "matlab_mfem", "refine_steps", 5)
 cd ../tests
 test_legacy_runtime_dd1d
@@ -214,7 +215,7 @@ Result:
 | Backend | Table scope | Max notable differences | Pass |
 | --- | --- | --- | --- |
 | `legacy_matlab` | 5 mesh rows x 13 legacy columns | all columns `0` | Yes, exact stored-table match |
-| `legacy_runtime` | 5 mesh rows x 13 legacy columns | `h=7.3464e-07`, error columns `<=4.1583e-13`, order columns `<=4.5600e-05` | Yes, within numerical tolerances |
+| `legacy_runtime` pre-deletion audit | 5 mesh rows x 13 legacy columns | `h=7.3464e-07`, error columns `<=4.1583e-13`, order columns `<=4.5600e-05` | Yes, recorded before deleting the old runtime folder |
 | `matlab_mfem` | 5 mesh rows x 13 legacy columns | `h=7.3464e-07`, error columns `<=4.1583e-13`, order columns `<=4.5600e-05` | Yes, self-contained MATLAB-native backend |
 | `mfem_projection` | 5 mesh rows x 13 legacy columns | `n_L2=7.8584e-03`, `phi_L2=1.2239e-02`, `E_L2=1.2239e-02`, Linf columns missing (`Inf`) | No |
 
@@ -222,7 +223,7 @@ Latest quick regression CSV checks:
 
 | Command | Rows | First-row status | First-row `n_L2` |
 | --- | --- | --- | --- |
-| `run_regression_suite("quick", true, "order", 3, "backend", "legacy_runtime", "include_device", false)` | 2 | `legacy_runtime` | `4.507504048373722e-06` |
+| `run_regression_suite("quick", true, "order", 3, "backend", "legacy_matlab", "include_device", false)` | 2 | `legacy_matlab_baseline` | `4.507504048373722e-06` |
 | `run_regression_suite("quick", true, "order", 3, "backend", "matlab_mfem", "include_device", false)` | 2 | `native_matlab_mfem` | `4.507504048373722e-06` |
 
 Latest C++ baseline check:
@@ -300,7 +301,7 @@ contact-current summaries.
 
 Latest validation-suite check:
 
-| Command | MATLAB runtime status | MATLAB native status | MATLAB first-row `n_L2` | C++ baseline rows | C++ native rows | C++ device native summary | C++ device native tables | C++ device native solve |
+| Command | MATLAB controlled-baseline status | MATLAB native status | MATLAB first-row `n_L2` | C++ baseline rows | C++ native rows | C++ device native summary | C++ device native tables | C++ device native solve |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `mfem_dd/tools/run_legacy_validation.ps1` | passed | passed | `4.5075040483737219e-06` | 5 passed | 5 passed | 12 compact fields passed | 9 IV, 7 CV, and 108 transient rows passed | 9 IV, 7 CV, and 108 transient rows passed |
 
@@ -332,5 +333,15 @@ repository and are tracked in the 2D repository.
 
 ## Deletion rule
 
-A legacy folder can only be removed by a later dedicated commit after this table records matching legacy,
-MATLAB, and C++ metrics.
+A legacy folder can only be removed by a dedicated commit after this table
+records matching legacy, MATLAB, and C++ metrics.
+
+## Deletion log
+
+| Deleted legacy directory | Old entry/output | Controlled baseline | New MATLAB output | New C++ output | Tolerance | Status |
+| --- | --- | --- | --- | --- | --- | --- |
+| `DD验阶/DD1D_smooth/` | `V1/result/error_table_SIPG_p3.txt` | `mfem_dd/cases/dd1d_smooth_mms/legacy_baseline/error_table_SIPG_p3.txt` | `mfemdd.compare_legacy_dd1d("backend","matlab_mfem")` matches all 5 rows | `dd1d_mms -b native_mfem` matches MATLAB-native table with max abs diff `1.0264e-12` | L2 relative `<=1e-6`, order diff `<=0.15`, printed-table h diff `<=1e-6` | Removed locally; not a tracked Git directory |
+| `DD模拟/V3/DD1D_pn_junction/` | `result/pn_junction/{iv_curve.csv,cv_curve.csv,transient_current.csv}` | `mfem_dd/cases/dd_pn_device/legacy_baseline/pn_junction/` | `mfemdd.compare_legacy_pn1d("backend","matlab_mfem")` matches IV/CV/transient full tables | `dd_device -b native_table` and `dd_device -b native_solve` match 9 IV, 7 CV, and 108 transient rows | physical quantity relative `<=1e-5`; CSV abs diff `<=1e-12` in validation | Removed locally; not a tracked Git directory |
+
+No 2D legacy directory is deleted by this 1D deletion step. The 2D repository
+still has open native-solve gaps and remains under the no-delete rule.

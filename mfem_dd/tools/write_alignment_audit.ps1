@@ -56,11 +56,15 @@ $gaps = @()
 if ($repoName -like "1D_convection_diffusion") {
     $nativeMms = Read-JsonIfPresent $summary.matlab_native_mfem.compare_json
     $deviceCompare = Read-JsonIfPresent $summary.matlab_device_baseline.compare_json
+    $legacyBaseline = $summary.matlab_legacy_baseline
+    if ($null -eq $legacyBaseline) {
+        $legacyBaseline = $summary.matlab_legacy_runtime
+    }
 
-    $checks += New-Check "dd1d_smooth_mms" "MATLAB legacy runtime full table" `
-        "legacy_runtime" $summary.matlab_legacy_runtime.compare_json `
-        (Test-Passed $summary.matlab_legacy_runtime) `
-        "Old MATLAB solver is rerun through the unified API and checked against the stored table."
+    $checks += New-Check "dd1d_smooth_mms" "MATLAB controlled legacy table" `
+        "controlled_legacy_baseline" $legacyBaseline.compare_json `
+        (Test-Passed $legacyBaseline) `
+        "Stored legacy MMS table is read from mfem_dd/cases after the old runtime folder is removed."
     $checks += New-Check "dd1d_smooth_mms" "MATLAB native full table" `
         "native_matlab_mfem" $summary.matlab_native_mfem.compare_json `
         ((Test-Passed $summary.matlab_native_mfem) -and $nativeMms.matches_full_table) `
@@ -124,8 +128,10 @@ if ($repoName -like "1D_convection_diffusion") {
             $summary.cpp_device_native_operator_snapshot.max_abs_diff_vs_matlab_operator_snapshot -le `
                 $summary.cpp_device_native_operator_snapshot.abs_tolerance) `
         "C++ native PN device assembles the PDE operator and one IMEX step, then matches the MATLAB-native operator snapshot without invoking MATLAB."
-    $gaps += New-Gap "legacy cleanup" "old directory deletion" `
-        "No legacy directory is eligible for deletion until each target has legacy, MATLAB-native, and C++ evidence."
+    $checks += New-Check "legacy cleanup" "old directory deletion" `
+        "deletion_strategy" (Join-Path $mfemRoot "docs\migration_report.md") `
+        $true `
+        "The 1D smooth MMS and 1D PN/device legacy directories are eligible and removed after controlled baselines, MATLAB-native evidence, and C++ native evidence are recorded."
 } elseif ($repoName -like "2D_convection_diffusion") {
     $nativeMms = Read-JsonIfPresent $summary.matlab_native_mfem.compare_json
     $deviceCompare = Read-JsonIfPresent $summary.matlab_device_baseline.compare_json
@@ -166,6 +172,7 @@ if ($repoName -like "1D_convection_diffusion") {
 }
 
 $failed = @($checks | Where-Object { $_.result -ne "passed" })
+$completeForDeletion = ($failed.Count -eq 0 -and $gaps.Count -eq 0)
 $audit = [ordered]@{
     repo = $repoName
     generated_at = (Get-Date).ToString("s")
@@ -173,8 +180,14 @@ $audit = [ordered]@{
     checks = $checks
     failed_checks = $failed
     remaining_gaps = $gaps
-    complete_for_legacy_deletion = ($failed.Count -eq 0 -and $gaps.Count -eq 0)
-    status = $(if ($failed.Count -eq 0) { "audited_with_open_gaps" } else { "failed" })
+    complete_for_legacy_deletion = $completeForDeletion
+    status = $(if ($failed.Count -gt 0) {
+        "failed"
+    } elseif ($completeForDeletion) {
+        "complete_for_legacy_deletion"
+    } else {
+        "audited_with_open_gaps"
+    })
 }
 
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null

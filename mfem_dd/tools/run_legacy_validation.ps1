@@ -168,13 +168,13 @@ if ($repoName -like "1D_convection_diffusion") {
 }
 
 $matlabDir = Convert-ToMatlabPath (Join-Path $mfemRoot "matlab")
-$compareJson = Convert-ToMatlabPath (Join-Path $artifactDir "legacy_runtime_compare.json")
-$regressionDir = Convert-ToMatlabPath (Join-Path $artifactDir "matlab_regression")
+$compareJson = Convert-ToMatlabPath (Join-Path $artifactDir "legacy_baseline_compare.json")
+$regressionDir = Convert-ToMatlabPath (Join-Path $artifactDir "matlab_baseline_regression")
 $matlabCommand = "cd('$matlabDir'); startup_mfem_dd; " +
-    "r=$compareFunction('backend','legacy_runtime','refine_steps',$refineSteps,'output_json','$compareJson'); " +
+    "r=$compareFunction('backend','legacy_matlab','refine_steps',$refineSteps,'output_json','$compareJson'); " +
     "assert(r.matches_full_table); " +
-    "s=run_regression_suite('quick',true,'order',$order,'backend','legacy_runtime','include_device',false,'output_dir','$regressionDir'); " +
-    "assert(numel(s.rows)==2); assert(strcmp(char(s.rows(1).metrics.status),'legacy_runtime'));"
+    "s=run_regression_suite('quick',true,'order',$order,'backend','legacy_matlab','include_device',false,'output_dir','$regressionDir'); " +
+    "assert(numel(s.rows)==2); assert(strcmp(char(s.rows(1).metrics.status),'legacy_matlab_baseline'));"
 if (-not [string]::IsNullOrWhiteSpace($deviceCompareFunction)) {
     $deviceJson = Convert-ToMatlabPath (Join-Path $artifactDir "legacy_device_compare.json")
     $matlabCommand += " d=$deviceCompareFunction('backend','matlab_mfem','output_json','$deviceJson'); assert(d.matches_baseline);"
@@ -191,7 +191,7 @@ if (-not [string]::IsNullOrWhiteSpace($nativeCompareFunction)) {
 
 Invoke-Checked { matlab -batch $matlabCommand } "MATLAB legacy validation"
 
-$regressionCsv = Join-Path (Join-Path $artifactDir "matlab_regression") "metrics.csv"
+$regressionCsv = Join-Path (Join-Path $artifactDir "matlab_baseline_regression") "metrics.csv"
 $regressionRows = Import-Csv $regressionCsv
 $observedRegressionFirstN = [double]$regressionRows[0].n_l2_error
 if ([Math]::Abs($observedRegressionFirstN - $regressionFirstN) -gt 1.0e-12) {
@@ -677,8 +677,8 @@ if (-not $SkipCpp) {
 $summary = [ordered]@{
     repo = $repoName
     generated_at = (Get-Date).ToString("s")
-    matlab_legacy_runtime = [ordered]@{
-        compare_json = (Join-Path $artifactDir "legacy_runtime_compare.json")
+    matlab_legacy_baseline = [ordered]@{
+        compare_json = (Join-Path $artifactDir "legacy_baseline_compare.json")
         regression_csv = $regressionCsv
         first_n_l2_error = $observedRegressionFirstN
         status = "passed"

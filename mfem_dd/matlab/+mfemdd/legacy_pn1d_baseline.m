@@ -1,8 +1,11 @@
 function baseline = legacy_pn1d_baseline()
 %LEGACY_PN1D_BASELINE Read the legacy 1D PN junction physical outputs.
-repo_root = fileparts(fileparts(fileparts(fileparts(mfilename("fullpath")))));
-pn_root = local_single_dir(fullfile(repo_root, "DD*", "V3", ...
-    "DD1D_pn_junction", "result", "pn_junction"));
+root = fileparts(fileparts(fileparts(mfilename("fullpath"))));
+pn_root = fullfile(root, "cases", "dd_pn_device", "legacy_baseline", ...
+    "pn_junction");
+if ~isfolder(pn_root)
+    error("Controlled PN1D legacy baseline folder not found: %s", pn_root);
+end
 
 iv_file = fullfile(pn_root, "iv_curve.csv");
 cv_file = fullfile(pn_root, "cv_curve.csv");
@@ -33,6 +36,8 @@ baseline.case_name = "dd_pn_device";
 baseline.device = "pn_junction";
 baseline.generated_by = "stored_legacy_device_csv";
 baseline.source_root = string(pn_root);
+baseline.original_legacy_source_root = ...
+    "DD模拟/V3/DD1D_pn_junction/result/pn_junction";
 baseline.iv_source = string(iv_file);
 baseline.cv_source = string(cv_file);
 baseline.transient_source = string(transient_file);
@@ -40,15 +45,6 @@ baseline.summary = summary;
 baseline.iv = iv;
 baseline.cv = cv;
 baseline.transient = transient;
-end
-
-function folder = local_single_dir(pattern)
-matches = dir(pattern);
-matches = matches([matches.isdir]);
-if isempty(matches)
-    error("Legacy PN1D baseline folder not found: %s", pattern);
-end
-folder = fullfile(matches(1).folder, matches(1).name);
 end
 
 function value = local_lookup(tbl, key_name, key_value, value_name)

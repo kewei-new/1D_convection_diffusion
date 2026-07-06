@@ -260,15 +260,23 @@ classdef CaseRunner
 
         function metrics = runLegacySmoothMMS1D(opts)
             baseline = mfemdd.legacy_dd1d_baseline("method", opts.method, "p_order", opts.order);
-            row = baseline.data(1, :);
-            elements = round((2.0 * pi) / row(1));
+            target_h = (2.0 * pi) / opts.elements;
+            [h_diff, row_id] = min(abs(baseline.data(:, 1) - target_h));
+            if h_diff > 1.0e-6
+                error("No stored DD1D legacy baseline row for elements=%d.", opts.elements);
+            end
+            row = baseline.data(row_id, :);
+            elements = opts.elements;
             mesh = mfemdd.Mesh.MakeCartesian1D(elements, 2.0 * pi);
             fec = mfemdd.FiniteElementCollection("L2", opts.order, 1);
             fes = mfemdd.FiniteElementSpace(mesh, fec);
             metrics = mfemdd.CaseRunner.baseMetrics("dd1d_smooth_mms", mesh, fes, opts);
             metrics.n_l2_error = row(2);
+            metrics.n_linf_error = row(4);
             metrics.phi_l2_error = row(6);
+            metrics.phi_linf_error = row(8);
             metrics.E_l2_error = row(10);
+            metrics.E_linf_error = row(12);
             metrics.n_relative_l2_error = NaN;
             metrics.phi_relative_l2_error = NaN;
             metrics.E_relative_l2_error = NaN;
